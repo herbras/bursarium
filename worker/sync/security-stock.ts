@@ -34,7 +34,7 @@ export async function syncSecurityStock(
       listingDate: item.ListingDate ? new Date(item.ListingDate) : null
     }))
 
-  const count = await batchUpsert(rows, (row) =>
+  const count = await batchUpsert(db, rows, (row) =>
     db
       .insert(schemas.securityStock)
       .values(row)

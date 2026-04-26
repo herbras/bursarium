@@ -37,7 +37,7 @@ export async function syncParticipantBroker(
       license: item.License ?? null
     }))
 
-  const count = await batchUpsert(rows, (row) =>
+  const count = await batchUpsert(db, rows, (row) =>
     db
       .insert(schemas.participantBroker)
       .values(row)
@@ -67,7 +67,7 @@ export async function syncParticipantDealer(
       isPrimary: item.IsPd === 1
     }))
 
-  const count = await batchUpsert(rows, (row) =>
+  const count = await batchUpsert(db, rows, (row) =>
     db
       .insert(schemas.participantDealer)
       .values(row)
@@ -97,7 +97,7 @@ export async function syncParticipantProfile(
       isPrimary: item.IsPd === 1
     }))
 
-  const count = await batchUpsert(rows, (row) =>
+  const count = await batchUpsert(db, rows, (row) =>
     db
       .insert(schemas.participantProfile)
       .values(row)

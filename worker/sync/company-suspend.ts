@@ -35,7 +35,7 @@ export async function syncCompanySuspend(
       downloadUrl: item.Data_Download ?? null
     }))
 
-  const count = await batchUpsert(rows, (row) =>
+  const count = await batchUpsert(db, rows, (row) =>
     db
       .insert(schemas.companySuspend)
       .values(row)

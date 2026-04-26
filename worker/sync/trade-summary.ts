@@ -33,7 +33,7 @@ export async function syncTradeSummary(
 
   // tradeSummary uses composite primary key (id, date); on-conflict
   // refers to *that* PK, not a single column.
-  const count = await batchUpsert(rows, (row) =>
+  const count = await batchUpsert(db, rows, (row) =>
     db
       .insert(schemas.tradeSummary)
       .values(row)

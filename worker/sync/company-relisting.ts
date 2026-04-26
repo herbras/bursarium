@@ -30,7 +30,7 @@ export async function syncCompanyRelisting(
       listingDate: new Date(item.TanggalPencatatan).getTime()
     }))
 
-  const count = await batchUpsert(rows, (row) =>
+  const count = await batchUpsert(db, rows, (row) =>
     db
       .insert(schemas.companyRelisting)
       .values(row)

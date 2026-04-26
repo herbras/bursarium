@@ -35,7 +35,7 @@ export async function syncCompanyProfile(
       listingDate: item.TanggalPencatatan ? new Date(item.TanggalPencatatan) : null
     }))
 
-  const count = await batchUpsert(rows, (row) =>
+  const count = await batchUpsert(db, rows, (row) =>
     db
       .insert(schemas.companyProfile)
       .values(row)

@@ -13,6 +13,7 @@
 import type { D1Database } from '@cloudflare/workers-types'
 import type { IdxClient } from '../lib/client.ts'
 import { getDb, schemas } from '../lib/db.ts'
+import { batchUpsert } from './_helpers.ts'
 
 interface IndexRaw {
   IndexCode: string
@@ -39,23 +40,20 @@ export async function syncIndexList(d1: D1Database, client: IdxClient): Promise<
   }))
 
   const db = getDb(d1)
-  // D1 supports batched statements. For ~30 indices this is fine in one round.
-  await Promise.all(
-    rows.map((row) =>
-      db
-        .insert(schemas.indexList)
-        .values(row)
-        .onConflictDoUpdate({
-          target: schemas.indexList.code,
-          set: {
-            close: row.close,
-            change: row.change,
-            percent: row.percent,
-            current: row.current
-          }
-        })
-    )
+  const count = await batchUpsert(db, rows, (row) =>
+    db
+      .insert(schemas.indexList)
+      .values(row)
+      .onConflictDoUpdate({
+        target: schemas.indexList.code,
+        set: {
+          close: row.close,
+          change: row.change,
+          percent: row.percent,
+          current: row.current
+        }
+      })
   )
 
-  return { count: rows.length }
+  return { count }
 }

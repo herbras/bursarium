@@ -52,8 +52,11 @@ export function parseDate(dateStr: string): number | null {
   return Number.isNaN(t) ? null : Math.floor(t / 1000)
 }
 
+// Period stored in DB by syncs is `new Date(Date.UTC(year, month-1, 1)).getTime()`
+// (epoch milliseconds for first day of the month). Routes that filter by
+// period must use the same encoding to match.
 export function monthToPeriod(year: number, month: number): number {
-  return year * 100 + month
+  return new Date(Date.UTC(year, month - 1, 1)).getTime()
 }
 
 export function getYearMonth(query: Record<string, string | undefined>): {

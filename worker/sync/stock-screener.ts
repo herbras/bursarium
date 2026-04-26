@@ -78,7 +78,7 @@ export async function syncStockScreener(
       corpActionDate: item.corpActionDate ?? null
     }))
 
-  const count = await batchUpsert(rows, (row) =>
+  const count = await batchUpsert(db, rows, (row) =>
     db
       .insert(schemas.stockScreener)
       .values(row)

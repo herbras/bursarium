@@ -61,7 +61,7 @@ async function syncTopMover(
     }))
 
   const db = getDb(d1)
-  const count = await batchUpsert(rows, (row) =>
+  const count = await batchUpsert(db, rows, (row) =>
     db
       .insert(table)
       .values(row)

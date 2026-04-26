@@ -11,11 +11,14 @@
 // internally; for >1000 rows we chunk to avoid sub-request limits.
 
 import type { D1Database } from '@cloudflare/workers-types'
+import type { BatchItem } from 'drizzle-orm/batch'
 import type { IdxClient } from '../lib/client.ts'
+import type { Database } from '../lib/db.ts'
 
 export const IDX_BASE = 'https://www.idx.co.id'
 
-const CHUNK_SIZE = 500
+// D1 batch limit is 100 statements per call. We stay below that.
+const BATCH_CHUNK = 50
 
 /**
  * Build base64-encoded JSON query for the LINK_* endpoints that use it.
@@ -26,18 +29,57 @@ export function buildBase64PeriodQuery(year: number, month: number): string {
 }
 
 /**
- * Run upserts in chunks to stay within D1 sub-request limits and not block
- * the event loop. Returns total written count.
+ * Bulk upsert via D1 batch API.
+ *
+ * D1 batch API runs N statements in a single HTTP roundtrip atomically —
+ * orders of magnitude faster than `Promise.all` of individual inserts,
+ * which D1 serializes internally and can blow the 30s CPU budget at
+ * 1000-row scale.
+ *
+ * Atomicity per chunk: one bad row in a chunk fails the whole chunk.
+ * To salvage other chunks we catch + log the error per chunk and move on,
+ * but rows in the failed chunk are not retried individually here. For
+ * surgical debugging, look at the logged first-row payload + error cause.
+ *
+ * @returns count of rows successfully written.
  */
+// biome-ignore lint/suspicious/noExplicitAny: BatchItem internals are very generic
+type DrizzleStmt = BatchItem<any>
+
 export async function batchUpsert<T>(
+  db: Database,
   rows: T[],
-  upsertOne: (row: T) => Promise<unknown>
+  prepare: (row: T) => DrizzleStmt
 ): Promise<number> {
-  for (let i = 0; i < rows.length; i += CHUNK_SIZE) {
-    const slice = rows.slice(i, i + CHUNK_SIZE)
-    await Promise.all(slice.map(upsertOne))
+  if (rows.length === 0) return 0
+  let ok = 0
+  let chunksFailed = 0
+
+  for (let i = 0; i < rows.length; i += BATCH_CHUNK) {
+    const slice = rows.slice(i, i + BATCH_CHUNK)
+    // biome-ignore lint/suspicious/noExplicitAny: BatchItem array typing is delicate
+    const stmts = slice.map(prepare) as any
+    try {
+      await db.batch(stmts)
+      ok += slice.length
+    } catch (err) {
+      chunksFailed++
+      const message = err instanceof Error ? err.message : String(err)
+      // biome-ignore lint/suspicious/noExplicitAny: D1 errors expose cause
+      const cause = (err as any)?.cause
+      console.error(
+        `[batchUpsert] chunk ${i / BATCH_CHUNK + 1} of ${Math.ceil(rows.length / BATCH_CHUNK)} ` +
+          `(rows ${i}-${i + slice.length - 1}) failed: ${message}\n` +
+          `cause: ${JSON.stringify(cause, null, 2)}\n` +
+          `first row in chunk: ${JSON.stringify(slice[0]).slice(0, 500)}`
+      )
+    }
   }
-  return rows.length
+
+  if (chunksFailed > 0) {
+    console.warn(`[batchUpsert] ${chunksFailed} chunks failed; ${ok}/${rows.length} rows persisted`)
+  }
+  return ok
 }
 
 /**
