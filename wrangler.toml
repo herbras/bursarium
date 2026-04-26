@@ -1,0 +1,62 @@
+# Cloudflare Workers config for IDX-API (Hono + D1 + Queue).
+#
+# Bindings created at deploy time:
+#   - D1 database: idx-api  (run: wrangler d1 create idx-api)
+#   - Queue:       idx-sync (run: wrangler queues create idx-sync)
+#
+# Replace the placeholder UUIDs/IDs below after creating resources.
+
+name = "idx-api"
+main = "worker/index.ts"
+compatibility_date = "2025-12-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Optional: usage limits + observability
+[observability]
+enabled = true
+
+[observability.logs]
+invocation_logs = true
+
+# ---- D1 (SQLite at the edge) ----
+[[d1_databases]]
+binding = "DB"
+database_name = "idx-api"
+database_id = "REPLACE_WITH_D1_ID_AFTER_CREATE"
+migrations_dir = "drizzle"
+
+# ---- Queue: producer (scheduled handler enqueues sync jobs) ----
+[[queues.producers]]
+binding = "SYNC_QUEUE"
+queue = "idx-sync"
+
+# ---- Queue: consumer (separate handler in same Worker processes jobs) ----
+[[queues.consumers]]
+queue = "idx-sync"
+max_batch_size = 1
+max_batch_timeout = 5
+max_retries = 3
+dead_letter_queue = "idx-sync-dlq"
+
+# ---- Cron Triggers ----
+# Daily syncs at 18:30 WIB (11:30 UTC) — after IDX closes
+# Monthly syncs at 02:00 WIB on the 1st of each month (19:00 UTC previous day)
+[triggers]
+crons = [
+  "30 11 * * *",      # daily — 18:30 WIB
+  "0 19 1 * *"        # monthly — 02:00 WIB on day 1 (UTC -7)
+]
+
+# ---- Optional R2 bucket for static assets (company logos) ----
+# Uncomment after `wrangler r2 bucket create idx-assets`
+# [[r2_buckets]]
+# binding = "ASSETS"
+# bucket_name = "idx-assets"
+
+# ---- Vars (non-secret) ----
+[vars]
+IDX_BASE_URL = "https://www.idx.co.id"
+LOG_LEVEL = "info"
+
+# Secrets (set via `wrangler secret put <NAME>`):
+#   - none required at this point

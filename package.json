@@ -1,0 +1,34 @@
+{
+  "name": "idx-api-worker",
+  "version": "0.1.0-worker.1",
+  "description": "Indonesian Stock Exchange API on Cloudflare Workers (Hono + D1 + Queues).",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "tail": "wrangler tail",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate:local": "wrangler d1 migrations apply idx-api --local",
+    "db:migrate:remote": "wrangler d1 migrations apply idx-api --remote",
+    "db:studio": "drizzle-kit studio",
+    "lint": "biome lint ./worker ./src/Backend/Schemas",
+    "format": "biome format --write ./worker ./src/Backend/Schemas",
+    "check": "biome check ./worker ./src/Backend/Schemas && tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "drizzle-orm": "^0.45.1",
+    "hono": "^4.10.0"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.4",
+    "@cloudflare/vitest-pool-workers": "^0.7.0",
+    "@cloudflare/workers-types": "^4.20251201.0",
+    "drizzle-kit": "^0.31.9",
+    "typescript": "^5.6.3",
+    "vitest": "~3.0.0",
+    "wrangler": "^4.81.0"
+  }
+}

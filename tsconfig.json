@@ -1,8 +1,49 @@
 {
   "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2022"],
+    "types": ["@cloudflare/workers-types"],
+    "jsx": "react-jsx",
+    "jsxImportSource": "hono/jsx",
+    "strict": true,
+    "exactOptionalPropertyTypes": true,
+    "noImplicitOverride": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedIndexedAccess": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "useUnknownInCatchVariables": true,
+    "isolatedModules": true,
+    "allowImportingTsExtensions": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "noEmit": true,
     "baseUrl": ".",
     "paths": {
-      "@app/*": ["./src/*"]
+      "@worker/*": ["./worker/*"],
+      "@schemas/*": ["./src/Backend/Schemas/*"]
     }
-  }
+  },
+  "include": ["worker/**/*.ts", "src/Backend/Schemas/**/*.ts", "drizzle/**/*.ts"],
+  "exclude": [
+    "node_modules",
+    "tests",
+    "Cron.ts",
+    "src/api",
+    "src/Client.ts",
+    "src/Database.ts",
+    "src/Logger.ts",
+    "src/index.ts",
+    "src/Company",
+    "src/Market",
+    "src/Trading",
+    "src/Participants",
+    "src/Statistics",
+    "src/Backend/Sync"
+  ]
 }

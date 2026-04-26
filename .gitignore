@@ -15,3 +15,14 @@ Thumbs.db
 
 # Local
 data/
+
+# Cloudflare Workers
+.wrangler/
+.dev.vars
+.dev.vars.local
+*.log
+worker-configuration.d.ts
+
+# Drizzle generated meta
+drizzle/meta/
+
