@@ -10,6 +10,13 @@ name = "bursarium"
 main = "worker/index.ts"
 compatibility_date = "2025-12-01"
 compatibility_flags = ["nodejs_compat"]
+workers_dev = false
+
+# Custom domain — auto-provisions DNS A record + cert.
+# Requires sarbeh.com to be in this Cloudflare account as a zone.
+[[routes]]
+pattern = "bursarium.sarbeh.com"
+custom_domain = true
 
 # Optional: usage limits + observability
 [observability]
@@ -22,7 +29,7 @@ invocation_logs = true
 [[d1_databases]]
 binding = "DB"
 database_name = "idx-api"
-database_id = "REPLACE_WITH_D1_ID_AFTER_CREATE"
+database_id = "1f0bf8d2-5a6a-464e-b2cd-05421a9b559e"
 migrations_dir = "drizzle"
 
 # ---- Queue: producer (scheduled handler enqueues sync jobs) ----
@@ -39,13 +46,12 @@ max_retries = 3
 dead_letter_queue = "idx-sync-dlq"
 
 # ---- Cron Triggers ----
-# Daily syncs at 18:30 WIB (11:30 UTC) — after IDX closes
-# Monthly syncs at 02:00 WIB on the 1st of each month (19:00 UTC previous day)
-[triggers]
-crons = [
-  "30 11 * * *",      # daily — 18:30 WIB
-  "0 19 1 * *"        # monthly — 02:00 WIB on day 1 (UTC -7)
-]
+# Disabled until 1 cron slot frees up (account already has 5).
+# Manual trigger via /_test/run-sync?kind=indexList during validation.
+# To re-enable: free up 1 cron in another Worker, then uncomment below
+# (single cron at 18:30 WIB; dispatcher.ts handles daily + monthly fan-out).
+# [triggers]
+# crons = ["30 11 * * *"]
 
 # ---- Browser Rendering (cookie warmer) ----
 # Free Explorer tier: 10 hours/month, 5 concurrent sessions.
@@ -61,7 +67,7 @@ binding = "BROWSER"
 # Then paste the returned id below.
 [[kv_namespaces]]
 binding = "COOKIE_KV"
-id = "REPLACE_WITH_KV_ID_AFTER_CREATE"
+id = "ac18dfe80e1a4b149918601ec3187067"
 
 # ---- Optional R2 bucket for static assets (company logos) ----
 # Uncomment after `wrangler r2 bucket create idx-assets`

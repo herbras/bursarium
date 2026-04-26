@@ -63,26 +63,24 @@ export async function handleScheduled(controller: ScheduledController, env: Env)
     )
   }
 
-  // Cron expression match → which group to fan out
-  if (cron === '30 11 * * *') {
-    await enqueueAll(env, DAILY_KINDS.map((kind) => ({ kind })))
-    return
-  }
+  // Single cron fires daily; we dispatch:
+  //   - DAILY syncs always
+  //   - MONTHLY syncs when today is day 1 (sync previous month)
+  // Combined to stay within the 5-cron account limit.
+  const jobs: SyncJob[] = DAILY_KINDS.map((kind) => ({ kind }))
 
-  if (cron === '0 19 1 * *') {
-    const now = new Date(controller.scheduledTime)
-    // Sync the *previous* month — current month likely incomplete
+  const now = new Date(controller.scheduledTime)
+  if (now.getUTCDate() === 1) {
     const target = new Date(now.getUTCFullYear(), now.getUTCMonth() - 1, 1)
     const year = target.getUTCFullYear()
     const month = target.getUTCMonth() + 1
-    await enqueueAll(
-      env,
-      MONTHLY_KINDS.map((kind) => ({ kind, params: { year, month } }))
-    )
-    return
+    for (const kind of MONTHLY_KINDS) {
+      jobs.push({ kind, params: { year, month } })
+    }
+    console.log(`[scheduled] day 1 — including monthly syncs for ${year}-${month}`)
   }
 
-  console.warn(`[scheduled] unknown cron expression: ${cron}`)
+  await enqueueAll(env, jobs)
 }
 
 async function enqueueAll(env: Env, jobs: SyncJob[]): Promise<void> {
