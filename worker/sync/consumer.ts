@@ -22,6 +22,24 @@ import {
   syncParticipantProfile
 } from './participants.ts'
 import { syncTopGainer, syncTopLoser } from './top-movers.ts'
+import { syncForeignTrading } from './foreign-trading.ts'
+import { syncDomesticTrading } from './domestic-trading.ts'
+import { syncSectoralMovement } from './sectoral-movement.ts'
+import { syncDailyIndex } from './daily-index.ts'
+import { syncIndustryTrading } from './industry-trading.ts'
+import { syncAdditionalListing } from './additional-listing.ts'
+import { syncCompanyDelisting } from './company-delisting.ts'
+import { syncCompanyDividend } from './company-dividend.ts'
+import { syncFinancialRatio } from './financial-ratio.ts'
+import { syncNewListing } from './new-listing.ts'
+import { syncRightOffering } from './right-offering.ts'
+import { syncStockSplit } from './stock-split.ts'
+import { syncActiveFrequency, syncActiveValue, syncActiveVolume } from './active-stocks.ts'
+import { syncMarketCalendar } from './market-calendar.ts'
+import { syncStockSummary } from './stock-summary.ts'
+import { syncBrokerSummary } from './broker-summary.ts'
+import { syncIndexSummary } from './index-summary.ts'
+import { syncCompanyAnnouncement } from './company-announcement.ts'
 
 export async function handleQueue(batch: MessageBatch<SyncJob>, env: Env): Promise<void> {
   // Read cached cookies once per batch — feed them to the IdxClient so
@@ -98,25 +116,92 @@ async function runJob(env: Env, client: IdxClient, job: SyncJob): Promise<void> 
     }
 
     // Period-based (year + month)
-    case 'topGainer': {
+    case 'topGainer':
+    case 'topLoser':
+    case 'foreignTrading':
+    case 'domesticTrading':
+    case 'sectoralMovement':
+    case 'dailyIndex':
+    case 'industryTrading':
+    case 'additionalListing':
+    case 'companyDelisting':
+    case 'companyDividend':
+    case 'financialRatio':
+    case 'newListing':
+    case 'rightOffering':
+    case 'stockSplit':
+    case 'activeFrequency':
+    case 'activeValue':
+    case 'activeVolume': {
       requirePeriod(job.kind, params)
-      const r = await syncTopGainer(env.DB, client, params.year!, params.month!)
-      return logDone(job.kind, r.count)
-    }
-    case 'topLoser': {
-      requirePeriod(job.kind, params)
-      const r = await syncTopLoser(env.DB, client, params.year!, params.month!)
+      const y = params.year as number
+      const m = params.month as number
+      const r = await dispatchPeriod(job.kind, env, client, y, m)
       return logDone(job.kind, r.count)
     }
 
-    // TODO: remaining sync kinds — additionalListing, companyDelisting,
-    // companyDividend, financialRatio, foreignTrading, domesticTrading,
-    // industryTrading, activeFreq/Vol/Val, sectoralMovement, dailyIndex,
-    // newListing, rightOffering, stockSplit, companyAnnouncement,
-    // marketCalendar, stockSummary, brokerSummary, indexSummary,
-    // financialReport, issuedHistory, indexChart, tradingDaily, tradingSS.
+    // Date-based (single YYYYMMDD)
+    case 'marketCalendar':
+    case 'stockSummary':
+    case 'brokerSummary':
+    case 'indexSummary':
+    case 'companyAnnouncement': {
+      const date = params.date
+      if (!date) throw new Error(`${job.kind} requires params.date (YYYYMMDD)`)
+      const r = await dispatchDate(job.kind, env, client, date)
+      return logDone(job.kind, r.count)
+    }
+
+    // TODO per-ticker recursive: companyDetail, indexChart, tradingDaily,
+    // tradingSS, financialReport, issuedHistory — need queue fan-out
+    // (one message per ticker) since each takes ~500ms × ~950 tickers.
     default:
       throw new Error(`unhandled sync kind: ${job.kind}`)
+  }
+}
+
+async function dispatchPeriod(
+  kind: SyncJob['kind'],
+  env: Env,
+  client: IdxClient,
+  year: number,
+  month: number
+): Promise<{ count: number }> {
+  switch (kind) {
+    case 'topGainer': return syncTopGainer(env.DB, client, year, month)
+    case 'topLoser': return syncTopLoser(env.DB, client, year, month)
+    case 'foreignTrading': return syncForeignTrading(env.DB, client, year, month)
+    case 'domesticTrading': return syncDomesticTrading(env.DB, client, year, month)
+    case 'sectoralMovement': return syncSectoralMovement(env.DB, client, year, month)
+    case 'dailyIndex': return syncDailyIndex(env.DB, client, year, month)
+    case 'industryTrading': return syncIndustryTrading(env.DB, client, year, month)
+    case 'additionalListing': return syncAdditionalListing(env.DB, client, year, month)
+    case 'companyDelisting': return syncCompanyDelisting(env.DB, client, year, month)
+    case 'companyDividend': return syncCompanyDividend(env.DB, client, year, month)
+    case 'financialRatio': return syncFinancialRatio(env.DB, client, year, month)
+    case 'newListing': return syncNewListing(env.DB, client, year, month)
+    case 'rightOffering': return syncRightOffering(env.DB, client, year, month)
+    case 'stockSplit': return syncStockSplit(env.DB, client, year, month)
+    case 'activeFrequency': return syncActiveFrequency(env.DB, client, year, month)
+    case 'activeValue': return syncActiveValue(env.DB, client, year, month)
+    case 'activeVolume': return syncActiveVolume(env.DB, client, year, month)
+    default: throw new Error(`unsupported period kind: ${kind}`)
+  }
+}
+
+async function dispatchDate(
+  kind: SyncJob['kind'],
+  env: Env,
+  client: IdxClient,
+  date: string
+): Promise<{ count: number }> {
+  switch (kind) {
+    case 'marketCalendar': return syncMarketCalendar(env.DB, client, date)
+    case 'stockSummary': return syncStockSummary(env.DB, client, date)
+    case 'brokerSummary': return syncBrokerSummary(env.DB, client, date)
+    case 'indexSummary': return syncIndexSummary(env.DB, client, date)
+    case 'companyAnnouncement': return syncCompanyAnnouncement(env.DB, client, date)
+    default: throw new Error(`unsupported date kind: ${kind}`)
   }
 }
 

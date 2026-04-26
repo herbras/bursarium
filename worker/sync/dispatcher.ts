@@ -30,23 +30,37 @@ const DAILY_KINDS: SyncJob['kind'][] = [
   'tradeSummary',
   'dealerParticipant',
   'profileParticipant',
-  'brokerParticipant',
-  'companyAnnouncement'
+  'brokerParticipant'
+]
+
+// Date-based syncs — fired daily 18:00 WIB with date = today (YYYYMMDD).
+const DAILY_DATE_KINDS: SyncJob['kind'][] = [
+  'companyAnnouncement',
+  'stockSummary',
+  'brokerSummary',
+  'indexSummary',
+  'marketCalendar'
 ]
 
 // Month-1 02:00 WIB — aggregations parametric on year/month.
 const MONTHLY_KINDS: SyncJob['kind'][] = [
   'additionalListing',
   'companyDelisting',
-  'foreignTrading',
   'companyDividend',
   'financialRatio',
+  'newListing',
+  'rightOffering',
+  'stockSplit',
   'topGainer',
   'topLoser',
-  'rightOffering',
+  'foreignTrading',
+  'domesticTrading',
   'industryTrading',
-  'newListing',
-  'stockSplit'
+  'sectoralMovement',
+  'dailyIndex',
+  'activeFrequency',
+  'activeValue',
+  'activeVolume'
 ]
 
 export async function handleScheduled(controller: ScheduledController, env: Env): Promise<void> {
@@ -105,6 +119,13 @@ export function computeJobsForTime(scheduledTime: number): SyncJob[] {
 
   if (isCloseSync) {
     for (const kind of DAILY_KINDS) jobs.push({ kind })
+
+    // Date-based daily kinds — fire with today (the just-closed trading day).
+    const todayYmd = formatYmd(wib)
+    for (const kind of DAILY_DATE_KINDS) {
+      jobs.push({ kind, params: { date: todayYmd } })
+    }
+
     if (isMonthStart) {
       // Sync the *previous* full month (current month is incomplete)
       const target = new Date(wib.getUTCFullYear(), wib.getUTCMonth() - 1, 1)
@@ -117,6 +138,13 @@ export function computeJobsForTime(scheduledTime: number): SyncJob[] {
   }
 
   return jobs
+}
+
+function formatYmd(d: Date): string {
+  const y = d.getUTCFullYear()
+  const m = String(d.getUTCMonth() + 1).padStart(2, '0')
+  const day = String(d.getUTCDate()).padStart(2, '0')
+  return `${y}${m}${day}`
 }
 
 async function enqueueAll(env: Env, jobs: SyncJob[]): Promise<void> {

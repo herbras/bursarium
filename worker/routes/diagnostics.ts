@@ -26,6 +26,24 @@ import {
   syncParticipantProfile
 } from '../sync/participants.ts'
 import { syncTopGainer, syncTopLoser } from '../sync/top-movers.ts'
+import { syncForeignTrading } from '../sync/foreign-trading.ts'
+import { syncDomesticTrading } from '../sync/domestic-trading.ts'
+import { syncSectoralMovement } from '../sync/sectoral-movement.ts'
+import { syncDailyIndex } from '../sync/daily-index.ts'
+import { syncIndustryTrading } from '../sync/industry-trading.ts'
+import { syncAdditionalListing } from '../sync/additional-listing.ts'
+import { syncCompanyDelisting } from '../sync/company-delisting.ts'
+import { syncCompanyDividend } from '../sync/company-dividend.ts'
+import { syncFinancialRatio } from '../sync/financial-ratio.ts'
+import { syncNewListing } from '../sync/new-listing.ts'
+import { syncRightOffering } from '../sync/right-offering.ts'
+import { syncStockSplit } from '../sync/stock-split.ts'
+import { syncActiveFrequency, syncActiveValue, syncActiveVolume } from '../sync/active-stocks.ts'
+import { syncMarketCalendar } from '../sync/market-calendar.ts'
+import { syncStockSummary } from '../sync/stock-summary.ts'
+import { syncBrokerSummary } from '../sync/broker-summary.ts'
+import { syncIndexSummary } from '../sync/index-summary.ts'
+import { syncCompanyAnnouncement } from '../sync/company-announcement.ts'
 import type { Env } from '../lib/types.ts'
 
 export const diagnosticsRouter = new Hono<{ Bindings: Env & { DIAG_TOKEN?: string } }>()
@@ -124,38 +142,81 @@ diagnosticsRouter.get('/run-sync', async (c) => {
       case 'profileParticipant':
         result = await syncParticipantProfile(c.env.DB, client)
         break
+      // Period-based — require year + month
       case 'topGainer':
-      case 'topLoser': {
+      case 'topLoser':
+      case 'foreignTrading':
+      case 'domesticTrading':
+      case 'sectoralMovement':
+      case 'dailyIndex':
+      case 'industryTrading':
+      case 'additionalListing':
+      case 'companyDelisting':
+      case 'companyDividend':
+      case 'financialRatio':
+      case 'newListing':
+      case 'rightOffering':
+      case 'stockSplit':
+      case 'activeFrequency':
+      case 'activeValue':
+      case 'activeVolume': {
         if (!year || !month) {
           return c.json(
-            { error: `kind '${kind}' requires query params year=YYYY&month=1-12` },
+            { error: `kind '${kind}' requires year=YYYY&month=1-12` },
             400
           )
         }
-        result =
-          kind === 'topGainer'
-            ? await syncTopGainer(c.env.DB, client, year, month)
-            : await syncTopLoser(c.env.DB, client, year, month)
+        const periodFns: Record<string, typeof syncTopGainer> = {
+          topGainer: syncTopGainer,
+          topLoser: syncTopLoser,
+          foreignTrading: syncForeignTrading,
+          domesticTrading: syncDomesticTrading,
+          sectoralMovement: syncSectoralMovement,
+          dailyIndex: syncDailyIndex,
+          industryTrading: syncIndustryTrading,
+          additionalListing: syncAdditionalListing,
+          companyDelisting: syncCompanyDelisting,
+          companyDividend: syncCompanyDividend,
+          financialRatio: syncFinancialRatio,
+          newListing: syncNewListing,
+          rightOffering: syncRightOffering,
+          stockSplit: syncStockSplit,
+          activeFrequency: syncActiveFrequency,
+          activeValue: syncActiveValue,
+          activeVolume: syncActiveVolume
+        }
+        const fn = periodFns[kind]
+        if (!fn) return c.json({ error: `unknown period kind '${kind}'` }, 400)
+        result = await fn(c.env.DB, client, year, month)
         break
       }
+
+      // Date-based — require date YYYYMMDD
+      case 'marketCalendar':
+      case 'stockSummary':
+      case 'brokerSummary':
+      case 'indexSummary':
+      case 'companyAnnouncement': {
+        const date = c.req.query('date')
+        if (!date) return c.json({ error: `kind '${kind}' requires date=YYYYMMDD` }, 400)
+        const dateFns: Record<string, typeof syncMarketCalendar> = {
+          marketCalendar: syncMarketCalendar,
+          stockSummary: syncStockSummary,
+          brokerSummary: syncBrokerSummary,
+          indexSummary: syncIndexSummary,
+          companyAnnouncement: syncCompanyAnnouncement
+        }
+        const fn = dateFns[kind]
+        if (!fn) return c.json({ error: `unknown date kind '${kind}'` }, 400)
+        result = await fn(c.env.DB, client, date)
+        break
+      }
+
       default:
         return c.json(
           {
             error: `kind '${kind}' not yet ported`,
-            available: [
-              'indexList',
-              'companyProfile',
-              'securityStock',
-              'companyRelisting',
-              'companySuspend',
-              'stockScreener',
-              'tradeSummary',
-              'brokerParticipant',
-              'dealerParticipant',
-              'profileParticipant',
-              'topGainer',
-              'topLoser'
-            ]
+            note: 'per-ticker recursive syncs (companyDetail, indexChart, tradingDaily, tradingSS, financialReport, issuedHistory) require queue fan-out — TODO'
           },
           400
         )
