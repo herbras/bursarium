@@ -59,4 +59,8 @@ IDX_BASE_URL = "https://www.idx.co.id"
 LOG_LEVEL = "info"
 
 # Secrets (set via `wrangler secret put <NAME>`):
-#   - none required at this point
+#   - DIAG_TOKEN — required to access /_test/* diagnostic endpoints.
+#                  When unset, /_test/* always 404s (safe default).
+#                  Set via:  wrangler secret put DIAG_TOKEN
+#                  For local dev, put it in .dev.vars (gitignored):
+#                    DIAG_TOKEN="local-dev-token"

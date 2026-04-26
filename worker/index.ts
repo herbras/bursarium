@@ -22,6 +22,7 @@ import {
   stockScreenerRouter,
   suspendRouter
 } from './routes/simple.ts'
+import { diagnosticsRouter } from './routes/diagnostics.ts'
 import { handleScheduled } from './sync/dispatcher.ts'
 import { handleQueue } from './sync/consumer.ts'
 import type { Env, SyncJob } from './lib/types.ts'
@@ -39,6 +40,7 @@ app.route('/securities', securitiesRouter)
 app.route('/stock-screener', stockScreenerRouter)
 app.route('/suspend', suspendRouter)
 app.route('/relisting', relistingRouter)
+app.route('/_test', diagnosticsRouter)
 
 app.notFound((c) => c.json({ error: 'not found' }, 404))
 app.onError((err, c) => {
