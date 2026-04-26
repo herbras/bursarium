@@ -19,6 +19,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@cloudflare/puppeteer": "^1.0.4",
     "drizzle-orm": "^0.45.1",
     "hono": "^4.10.0"
   },

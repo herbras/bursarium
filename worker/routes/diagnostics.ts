@@ -11,6 +11,8 @@
 
 import { Hono } from 'hono'
 import { IdxClient } from '../lib/client.ts'
+import { clearCachedCookies, getCachedCookies } from '../lib/cookie-cache.ts'
+import { warmCookies } from '../lib/cookie-warmer.ts'
 import { syncIndexList } from '../sync/index-list.ts'
 import type { Env } from '../lib/types.ts'
 
@@ -64,10 +66,13 @@ diagnosticsRouter.get('/idx-fetch', async (c) => {
 // Invokes a sync directly (bypassing the queue), so you can see what one
 // sync looks like end-to-end without waiting for cron + queue dispatch.
 // Currently only `kind=indexList` is wired (the only ported sync).
+//
+// Mirrors the consumer path: reads cached cookies from KV first.
 diagnosticsRouter.get('/run-sync', async (c) => {
   const kind = c.req.query('kind') ?? 'indexList'
   const start = Date.now()
-  const client = new IdxClient(c.env.IDX_BASE_URL)
+  const cached = await getCachedCookies(c.env.COOKIE_KV)
+  const client = new IdxClient(c.env.IDX_BASE_URL, cached?.cookieHeader ?? '')
 
   try {
     if (kind === 'indexList') {
@@ -76,6 +81,8 @@ diagnosticsRouter.get('/run-sync', async (c) => {
         kind,
         status: 'ok',
         durationMs: Date.now() - start,
+        usedCachedCookies: cached !== null,
+        cookieSource: cached?.source,
         result
       })
     }
@@ -91,6 +98,64 @@ diagnosticsRouter.get('/run-sync', async (c) => {
       500
     )
   }
+})
+
+// ---- Cookie cache: status (read-only) ----
+diagnosticsRouter.get('/cookie-status', async (c) => {
+  const cached = await getCachedCookies(c.env.COOKIE_KV)
+  if (!cached) {
+    return c.json({
+      cached: false,
+      hasKv: c.env.COOKIE_KV !== undefined,
+      hasBrowser: c.env.BROWSER !== undefined,
+      message: 'no cached cookies'
+    })
+  }
+  const ageMs = Date.now() - cached.obtainedAt
+  const ttlRemainingMs = cached.expiresAt - Date.now()
+  return c.json({
+    cached: true,
+    source: cached.source,
+    ageMs,
+    ttlRemainingMs,
+    cookieCount: cached.cookieHeader.split(';').filter(Boolean).length,
+    cookieNames: cached.cookieHeader
+      .split(';')
+      .map((s) => s.trim().split('=')[0])
+      .filter(Boolean),
+    hasKv: true,
+    hasBrowser: c.env.BROWSER !== undefined
+  })
+})
+
+// ---- Cookie cache: warm now (writes to KV) ----
+// Forces a fresh warm regardless of cache state. Useful to validate
+// that BROWSER binding works and to compare workers-fetch vs browser
+// cookie quality.
+diagnosticsRouter.get('/warm-cookies', async (c) => {
+  try {
+    const result = await warmCookies(c.env)
+    return c.json({
+      status: 'ok',
+      source: result.source,
+      durationMs: result.durationMs,
+      cookieCount: result.cookieCount
+    })
+  } catch (err) {
+    return c.json(
+      {
+        status: 'error',
+        error: err instanceof Error ? err.message : String(err)
+      },
+      500
+    )
+  }
+})
+
+// ---- Cookie cache: clear (for testing miss path) ----
+diagnosticsRouter.delete('/cookie-status', async (c) => {
+  await clearCachedCookies(c.env.COOKIE_KV)
+  return c.json({ status: 'cleared' })
 })
 
 // ---- 3. Dataset size ----

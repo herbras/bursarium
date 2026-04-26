@@ -47,6 +47,22 @@ crons = [
   "0 19 1 * *"        # monthly — 02:00 WIB on day 1 (UTC -7)
 ]
 
+# ---- Browser Rendering (cookie warmer) ----
+# Free Explorer tier: 10 hours/month, 5 concurrent sessions.
+# Used to bypass IDX's CF Bot Management ONCE per cron run; resulting
+# cookies are cached in KV and reused by all sync consumers.
+# See worker/lib/cookie-warmer.ts.
+[browser]
+binding = "BROWSER"
+
+# ---- KV: cookie cache for IDX session ----
+# Stores serialized __cf_bm + _cfuvid cookies with ~25 min TTL.
+# Create:  wrangler kv namespace create COOKIE_KV
+# Then paste the returned id below.
+[[kv_namespaces]]
+binding = "COOKIE_KV"
+id = "REPLACE_WITH_KV_ID_AFTER_CREATE"
+
 # ---- Optional R2 bucket for static assets (company logos) ----
 # Uncomment after `wrangler r2 bucket create idx-assets`
 # [[r2_buckets]]

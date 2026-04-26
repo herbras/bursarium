@@ -42,8 +42,44 @@ CF edge. Use this only to verify code paths, not IP egress.
 npm run dev
 # in another terminal:
 curl 'http://localhost:8787/_test/idx-fetch?token=smoke-test-2026' | jq
+curl 'http://localhost:8787/_test/cookie-status?token=smoke-test-2026' | jq
+curl 'http://localhost:8787/_test/warm-cookies?token=smoke-test-2026' | jq
 curl 'http://localhost:8787/_test/run-sync?token=smoke-test-2026&kind=indexList' | jq
 curl 'http://localhost:8787/_test/dataset-size?token=smoke-test-2026' | jq
+```
+
+### Cookie warmer-specific checks
+
+```jsonc
+// /_test/cookie-status (initial — empty)
+{ "cached": false, "hasKv": true, "hasBrowser": true, "message": "no cached cookies" }
+
+// /_test/warm-cookies (force warm; tries Browser, falls back to fetch)
+{ "status": "ok", "source": "browser-rendering", "durationMs": 20264, "cookieCount": 3 }
+
+// /_test/cookie-status (after warm)
+{
+  "cached": true,
+  "source": "browser-rendering",
+  "ageMs": 75,
+  "ttlRemainingMs": 1499925,    // ≈ 25 min
+  "cookieCount": 3,
+  "cookieNames": ["_cfuvid", "__cf_bm", "auth.strategy"]
+}
+
+// /_test/run-sync (uses cached cookies if present)
+{
+  "kind": "indexList",
+  "status": "ok",
+  "durationMs": 190,             // 3x faster than 624ms without cache
+  "usedCachedCookies": true,
+  "cookieSource": "browser-rendering",
+  "result": { "count": 45 }
+}
+
+// DELETE /_test/cookie-status (clear cache to retest miss path)
+curl -X DELETE 'http://localhost:8787/_test/cookie-status?token=...'
+// → { "status": "cleared" }
 ```
 
 Local pass = code is sane. Doesn't prove CF IP works.

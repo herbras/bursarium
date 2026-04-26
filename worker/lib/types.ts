@@ -1,10 +1,14 @@
-import type { D1Database, Queue } from '@cloudflare/workers-types'
+import type { D1Database, KVNamespace, Queue, Fetcher } from '@cloudflare/workers-types'
 
 export interface Env {
   DB: D1Database
   SYNC_QUEUE: Queue<SyncJob>
   IDX_BASE_URL: string
   LOG_LEVEL: string
+  // BROWSER + COOKIE_KV are optional so local dev (without --remote) and
+  // testing degrade gracefully — code that uses them must null-check.
+  BROWSER?: Fetcher
+  COOKIE_KV?: KVNamespace
   ASSETS?: R2Bucket
 }
 

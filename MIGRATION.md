@@ -33,10 +33,46 @@ flowchart LR
 | Schemas        | `src/Backend/Schemas/`         | reused as-is (vanilla `sqlite-core`)     | ✅ |
 | Cron           | `Cron.ts` monolith             | Cron Trigger → Queue (fan-out)           | ✅ skeleton |
 | Sync jobs      | `src/Backend/Sync/` (38 files) | `worker/sync/<kind>.ts`                  | ⏳ 1/38 |
+| Bot bypass     | in-process cookie cache        | Browser Rendering warmer + KV cache      | ✅ wired |
 | File serving   | `router.static('/public/img')` | R2 bucket + handler (or drop)            | ❌ TODO |
 | CLI discovery  | `src/index.ts runDiscovery`    | dropped (Workers has no CLI)             | n/a |
 | Tests          | `deno test`                    | Vitest + `@cloudflare/vitest-pool-workers`| ❌ TODO |
 | Lint/Format    | `deno fmt + lint`              | Biome                                    | ✅ wired |
+
+## Cookie warmer flow (real measurements)
+
+```mermaid
+flowchart TD
+    Cron[Cron Trigger fires] --> Sched[scheduled handler]
+    Sched -->|check KV| Stale{Cookies<br/>fresh<br/><20 min?}
+    Stale -->|yes| Skip[skip warm]
+    Stale -->|no| Warm[warmCookies]
+    Warm -->|try BROWSER| Browser["@cloudflare/puppeteer<br/>~20s, 3 cookies"]
+    Warm -->|fallback| WFetch[Workers fetch<br/>~300ms]
+    Browser -->|set KV TTL=25min| KV[(COOKIE_KV)]
+    WFetch -->|set KV TTL=25min| KV
+    Skip --> Fan[enqueue 11-22 jobs]
+    KV --> Fan
+    Fan --> Q[(SYNC_QUEUE)]
+
+    Q --> Cons[queue consumer]
+    Cons -->|read KV| KV
+    Cons -->|new IdxClient with cookies| Sync[run sync<br/>~190ms each]
+    Sync -->|upsert| D1[(D1)]
+```
+
+Real timings from local smoke test (workerd 4.85, miniflare local D1+KV+Browser):
+
+| Step                                | Time    |
+|-------------------------------------|---------|
+| Cookie warm (Browser Rendering)     | 20.3s   |
+| Cookie warm (Workers fetch fallback)| ~300ms  |
+| Sync indexList without cookies      | 624ms   |
+| Sync indexList with cached cookies  | 190ms   |
+
+**Cost projection on free Explorer tier (10 browser hours/month):**
+- 1 warm per cron run × 30 runs/month × 20.3s = **~10 minutes/month**
+- 1.7% of free tier budget. Plenty of headroom for retries + monthly cron.
 
 ## Routes ported
 
@@ -83,17 +119,22 @@ wrangler d1 create idx-api
 wrangler queues create idx-sync
 wrangler queues create idx-sync-dlq
 
-# 5. Generate + apply schema
+# 5. Create KV namespace for cookie cache
+wrangler kv namespace create COOKIE_KV
+# → copy the returned id into wrangler.toml
+
+# 6. Browser Rendering: enable in Cloudflare dashboard
+#    https://dash.cloudflare.com/?to=/:account/workers/services -> Browser Rendering
+#    Free Explorer tier: 10 browser hours/month, 5 concurrent.
+#    No CLI step needed once enabled — the [browser] binding picks it up.
+
+# 7. Generate + apply schema
 npm run db:generate            # writes drizzle/0000_*.sql
 npm run db:migrate:local       # applies to local D1 (miniflare)
 npm run db:migrate:remote      # applies to production D1
 
-# 6. Run locally
+# 8. Run locally
 npm run dev                    # http://localhost:8787
-
-# 7. Test queue trigger manually (optional)
-# In another shell:
-curl -X POST http://localhost:8787/__scheduled?cron=30+11+*+*+*
 ```
 
 ## Known issues / risks

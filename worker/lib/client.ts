@@ -21,11 +21,15 @@ interface FetchOptions {
 }
 
 export class IdxClient {
-  private cookie = ''
+  private cookie: string
   private readonly baseUrl: string
 
-  constructor(baseUrl = 'https://www.idx.co.id') {
+  // Cookies can be injected from the cookie cache (KV-backed). When
+  // provided, ensureSession is a no-op — saves the homepage round-trip
+  // per consumer invocation.
+  constructor(baseUrl = 'https://www.idx.co.id', cookies = '') {
     this.baseUrl = baseUrl
+    this.cookie = cookies
   }
 
   async ensureSession(): Promise<void> {
