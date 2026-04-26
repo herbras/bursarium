@@ -184,6 +184,23 @@ GET /participants/{brokers|dealers|profiles}
 
 ---
 
+## Sync schedule (live-aware)
+
+IDX market hours WIB: Mon-Fri 09:00-11:30 (sesi 1) + 13:30-16:00 (sesi 2). Sync strategy ngikut:
+
+| Kapan | Apa yang di-sync | Kenapa |
+|-------|------------------|--------|
+| **Tiap jam 09:00-16:00 WIB Mon-Fri** | `indexList`, `stockScreener` | Live tracking IHSG, LQ45, dll — bergerak setiap menit |
+| **Daily 18:00 WIB** | Profile, security, suspend, relisting, trade summary, broker/dealer/profile participants, announcements | Final close + data static-ish (jarang berubah intraday) |
+| **Monthly day-1 18:00 WIB** | Financial ratio, dividend, splits, listings, delistings, foreign trading, top gainer/loser, sectoral | Aggregations bulan sebelumnya |
+
+Implementasi: **single cron `0 * * * *`** (hourly), `worker/sync/dispatcher.ts` decide-apa-yg-di-fire berdasarkan WIB time + day-of-week + day-of-month. Most invocation no-op (cheap exit), jadi cuma fire saat butuh.
+
+**Status saat deploy ini:** Cron belum aktif — akun di 5/5 limit. Dua jalur untuk enable:
+
+1. **Workers Cron** (preferred): free up 1 cron di worker lain di account, lalu uncomment block `[triggers]` di `wrangler.toml`, redeploy.
+2. **GitHub Actions cron** (alternative, no quota): lihat `.github/workflows/sync.yml`. Set repo secret `BURSARIUM_URL` + `BURSARIUM_TOKEN`, enable Actions.
+
 ## Arsitektur
 
 ```mermaid

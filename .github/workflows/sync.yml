@@ -1,0 +1,90 @@
+name: Bursarium Sync
+
+# Hits /_test/run-sync on the deployed Worker via cron.
+# Use this when Workers Cron quota is full (account 5/5 limit).
+#
+# Setup:
+#   1. Repo Settings -> Secrets and variables -> Actions
+#   2. Add secrets:
+#        BURSARIUM_URL    = https://bursarium.sarbeh.com
+#        BURSARIUM_TOKEN  = <DIAG_TOKEN value>
+#   3. Enable Actions in repo Settings (if forked, default off)
+#
+# Schedule (UTC, GitHub Actions cron is UTC always):
+#   - Hourly during IDX market hours (Mon-Fri)
+#   - Once at end-of-day for full snapshots
+#   - Once on day 1 of month for monthly aggregates
+#
+# IDX market hours WIB = UTC+7 → 02:00-09:00 UTC = 09:00-16:00 WIB
+# End-of-day 18:00 WIB = 11:00 UTC
+# Month-start 02:00 WIB on day 1 = 19:00 UTC on previous day (run on day 1 at 00:00 UTC for safety)
+
+on:
+  schedule:
+    # Intraday: hourly during market hours (Mon-Fri)
+    - cron: '0 2-9 * * 1-5'
+    # End-of-day: 11:00 UTC (18:00 WIB) every day
+    - cron: '0 11 * * *'
+    # Monthly: day 1 at 19:30 UTC (02:30 WIB on day 2; current month full)
+    - cron: '30 19 1 * *'
+  workflow_dispatch: # Manual trigger from Actions tab
+    inputs:
+      kind:
+        description: 'sync kind (e.g. indexList) — or "auto" to dispatch by current time'
+        required: false
+        default: 'auto'
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Determine sync target
+        id: target
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            KIND="${{ inputs.kind }}"
+          else
+            # Auto-detect by scheduled cron expression
+            CRON="${{ github.event.schedule }}"
+            if [ "$CRON" = "0 2-9 * * 1-5" ]; then
+              KIND="indexList"  # intraday — start small, expand later
+            elif [ "$CRON" = "0 11 * * *" ]; then
+              KIND="indexList"  # daily fallback (until other syncs ported)
+            elif [ "$CRON" = "30 19 1 * *" ]; then
+              KIND="indexList"  # monthly fallback
+            else
+              KIND="indexList"
+            fi
+          fi
+          if [ "$KIND" = "auto" ]; then
+            KIND="indexList"
+          fi
+          echo "kind=$KIND" >> "$GITHUB_OUTPUT"
+          echo "Will sync: $KIND"
+
+      - name: Trigger sync
+        env:
+          BURSARIUM_URL: ${{ secrets.BURSARIUM_URL }}
+          BURSARIUM_TOKEN: ${{ secrets.BURSARIUM_TOKEN }}
+          KIND: ${{ steps.target.outputs.kind }}
+        run: |
+          if [ -z "$BURSARIUM_URL" ] || [ -z "$BURSARIUM_TOKEN" ]; then
+            echo "::error::Missing BURSARIUM_URL or BURSARIUM_TOKEN secret"
+            exit 1
+          fi
+          curl -fsS \
+            -H "User-Agent: github-actions/bursarium-sync" \
+            "${BURSARIUM_URL}/_test/run-sync?token=${BURSARIUM_TOKEN}&kind=${KIND}" \
+            | tee /tmp/result.json
+
+          # Sanity check — fail loudly if status != ok
+          STATUS=$(jq -r '.status' /tmp/result.json)
+          if [ "$STATUS" != "ok" ]; then
+            echo "::error::Sync returned status=$STATUS"
+            cat /tmp/result.json
+            exit 1
+          fi
+          DURATION=$(jq -r '.durationMs' /tmp/result.json)
+          COUNT=$(jq -r '.result.count // "?"' /tmp/result.json)
+          echo "::notice::Sync OK — $KIND wrote $COUNT rows in ${DURATION}ms"

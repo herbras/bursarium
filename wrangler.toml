@@ -46,12 +46,21 @@ max_retries = 3
 dead_letter_queue = "idx-sync-dlq"
 
 # ---- Cron Triggers ----
-# Disabled until 1 cron slot frees up (account already has 5).
-# Manual trigger via /_test/run-sync?kind=indexList during validation.
-# To re-enable: free up 1 cron in another Worker, then uncomment below
-# (single cron at 18:30 WIB; dispatcher.ts handles daily + monthly fan-out).
+# Single hourly cron — dispatcher.ts decides what to enqueue based on WIB time:
+#   - INTRADAY (indexList, stockScreener): 09:00-16:00 WIB Mon-Fri
+#   - DAILY (full snapshots):              18:00 WIB every day
+#   - MONTHLY (financials, dividends):     18:00 WIB on day 1
+# `0 * * * *` = every hour at :00 UTC.
+#
+# CURRENTLY DISABLED — account at 5/5 cron limit. To enable:
+#   1. Free 1 cron slot in another Worker
+#   2. Uncomment below
+#   3. wrangler deploy
+#
+# Alternative without Workers Cron: see .github/workflows/sync.yml
+# (GitHub Actions cron hits /_test/run-sync — no quota impact).
 # [triggers]
-# crons = ["30 11 * * *"]
+# crons = ["0 * * * *"]
 
 # ---- Browser Rendering (cookie warmer) ----
 # Free Explorer tier: 10 hours/month, 5 concurrent sessions.
