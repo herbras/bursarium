@@ -1,163 +1,266 @@
 <div align="center">
 
-# Indonesian Stock Exchange API Wrapper
+# Bursarium
 
-A data pipeline for the Indonesian Stock Exchange (IDX). Built with Deno and Drizzle ORM to sync official market data into a structured SQLite database. It includes automated retries for network stability and provides modules for company info, indices, and trading data.
+**IDX data at the edge.** Indonesian Stock Exchange data API serving from Cloudflare's network — zero infra, near-zero cost, sub-100ms response from Asia.
 
-[![Deno](https://img.shields.io/badge/deno-compatible-ffcb00?logo=deno&logoColor=000000)](https://deno.com) [![SQLite](https://img.shields.io/badge/sqlite-compatible-0740ae?logo=sqlite&logoColor=ffffff)](https://www.sqlite.org/) [![Drizzle](https://img.shields.io/badge/drizzle-orm-blue.svg)](https://orm.drizzle.team/)
-
-[![Module type: Deno/ESM](https://img.shields.io/badge/module%20type-deno%2Fesm-brightgreen)](https://github.com/NeaByteLab/IDX-API) [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Cloudflare Workers](https://img.shields.io/badge/cloudflare-workers-f38020?logo=cloudflare&logoColor=fff)](https://workers.cloudflare.com/)
+[![Hono](https://img.shields.io/badge/hono-4.10-orange?logo=hono&logoColor=fff)](https://hono.dev/)
+[![D1](https://img.shields.io/badge/d1-sqlite-0082c0?logo=cloudflare&logoColor=fff)](https://developers.cloudflare.com/d1/)
+[![Drizzle ORM](https://img.shields.io/badge/drizzle-orm-c5f74f?logo=drizzle&logoColor=000)](https://orm.drizzle.team/)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 </div>
 
-## Features
+> **Status:** active migration from [`NeaByteLab/IDX-API`](https://github.com/NeaByteLab/IDX-API) (Deno + libsql) ke Cloudflare Workers + Hono + D1. Skeleton & cookie-warmer **sudah live**, bulk port routes/syncs in progress. Lihat [`MIGRATION.md`](./MIGRATION.md).
 
-- **Automated Sync** - Scheduled data synchronization with retry logic
-- **Official IDX Data** - Direct integration with Indonesian Stock Exchange APIs
-- **Structured Storage** - SQLite database with Drizzle ORM for type-safe queries
+---
 
-## Installation
+## Apa ini
 
-> [!NOTE]
-> **Prerequisites:** For **Deno** (install from [deno.com](https://deno.com/)).
+Bursarium = **edge-deployed wrapper untuk seluruh data publik IDX**. Sinkronisasi otomatis dari endpoint resmi IDX → simpan terstruktur di D1 → serve sebagai REST API yang fast, gratis, dan bisa di-query dari mana saja.
 
-> [!TIP]
-> **Want to see the data in action?** Check out [IDX-UI](https://github.com/NeaByteLab/IDX-UI) - the interactive dashboard for your market data!
+38 entitas data yang di-cover (per tabel D1):
 
-**Clone Repository:**
+| Kategori | Data |
+|----------|------|
+| **Korporat** | profile, detail (board/sektor/sekretaris/komisaris), announcement, dividend, financial report, financial ratio (PER, PBV, ROE, DER), issued history |
+| **Lifecycle** | new listing, additional listing, delisting, relisting, suspend, stock split, right offering |
+| **Trading** | stock summary, broker summary, trade summary, top gainer, top loser, active volume/value/frequency, foreign trading, domestic trading |
+| **Indeks** | index list (IHSG, LQ45, KOMPAS100, dll), daily index, index summary, index chart, sectoral movement |
+| **Market** | market calendar, stock screener (26 kolom analitik) |
+| **Participants** | broker participant, dealer participant, profile participant |
 
-```bash
-# Clone the repository
-git clone https://github.com/NeaByteLab/IDX-API.git
+---
 
-# Enter the project directory
-cd IDX-API/
+## Buat apa aja?
 
-# Initialize the database (Drizzle generate & push)
-deno task db:sync
-```
+Tools data IDX yang lengkap + low-cost membuka banyak hal yang biasanya susah dibikin solo developer Indonesia.
 
-**Requirements:**
+### Use case langsung
 
-- **[Deno](https://deno.com/)** (v2.5.0 or higher recommended)
-- **Git** (for cloning the repository)
+| Skenario | Kenapa Bursarium ngebantu |
+|----------|--------------------------|
+| **Personal portfolio dashboard** | Track holding kamu vs harga close + PER/PBV/ROE realtime, no scraping pribadi |
+| **Stock screener web/mobile** | Filter saham by sektor, PER, ROE, DER. Data sudah pre-aggregated di tabel `stock_screener` |
+| **Algorithmic trading research** | Historical OHLC + foreign/domestic flow untuk backtest |
+| **Corporate action notifier** | Webhook/bot saat ada dividend, split, RUPS, suspension untuk ticker yang kamu pantau |
+| **Telegram/WhatsApp bot** | "/saham BBCA" → balas dengan close price + change + corporate actions terbaru |
+| **Newsletter / Substack saham** | Bahan harian: top gainer/loser, foreign flow, IHSG sectoral movement |
+| **Compliance / due diligence** | Cek apakah perusahaan masih listed, ada suspension history, atau ke-delist |
+| **Akademik / tugas akhir** | Riset finance/economics — data IDX dalam bentuk SQLite langsung query, no scraping |
+| **Spreadsheet integration** | Google Sheets / Excel via `IMPORTDATA` ke endpoint Bursarium |
+| **AI/ML feature engineering** | Train model pakai historical fundamentals + flow data — semua sudah terstruktur |
+| **Fintech MVP** | Robo-advisor, sentiment dashboard, IPO tracker — data layer ready, fokus ke produk |
+| **Edukasi / kelas trading** | Show real data ke siswa tanpa harus subscribe vendor data berbayar |
+| **Jurnalisme bisnis** | Quick lookup financial state issuer untuk artikel Kompas/Bisnis.com |
+| **Internal tooling perusahaan** | Investment committee tools, internal stock pick tracker |
 
-## Technology Stack
+### Use case yang kurang cocok (jujur)
 
-- **Runtime**: [Deno](https://deno.com/) (Modern, Secure, High-Performance)
-- **Database**: [SQLite](https://www.sqlite.org/) via [LibSQL Client](https://github.com/tursodatabase/libsql-client-ts)
-- **ORM**: [Drizzle ORM](https://orm.drizzle.team/) (Type-Safe SQL ORM)
+- **Real-time tick streaming** — Bursarium sync daily, bukan WebSocket realtime. Untuk RT pakai broker API (Stockbit/IPOT/Mirae)
+- **Pre-market depth / order book** — IDX tidak expose ini publik
+- **Foreign markets** — cuma IDX/BEI, tidak NASDAQ/NYSE/HKEX
 
-## Architecture Overview
-
-```mermaid
-flowchart TD
-    %% Define Nodes
-    A[(Local SQLite DB)]:::db
-    B(Drizzle Schema Sync):::process
-    C[IDX API Endpoints]:::api
-    D(BaseClient Fetcher):::process
-    E{Data Valid?}:::decision
-    F(Data Processing):::process
-    G(Drizzle Upsert):::process
-    H[Your Application / CLI]:::app
-
-    %% Define Flow
-    B -->|Setup Tables| A
-    C -.->|HTTP Res| D
-    D -->|Raw JSON| E
-    E -->|No: Retry| D
-    E -->|Yes: Parse| F
-    F -->|Clean Data| G
-    G -->|Store| A
-    A -->|Query| H
-
-    %% Styling
-    classDef db fill:#e0f7fa,stroke:#006064,stroke-width:2px,color:#000000;
-    classDef process fill:#f5f5f5,stroke:#9e9e9e,color:#000000;
-    classDef api fill:#fff3e0,stroke:#e65100,stroke-dasharray: 5 5,color:#000000;
-    classDef decision fill:#e8f5e9,stroke:#2e7d32,color:#000000,shape:rhombus;
-    classDef app fill:#ede7f6,stroke:#4527a0,stroke-width:2px,color:#000000;
-```
+---
 
 ## Quick Start
 
-```typescript
-import * as sync from '@app/Backend/Sync/index.ts'
-import IDXClient from '@app/index.ts'
+```bash
+# Clone
+git clone https://github.com/herbras/bursarium.git
+cd bursarium
 
-// Initialize database (run once)
-await sync.dbInitialize()
+# Install
+npm install
 
-// Sync company profiles
-await sync.syncCompanyProfile()
+# Login + create resources di Cloudflare account kamu
+wrangler login
+wrangler d1 create idx-api          # copy database_id ke wrangler.toml
+wrangler queues create idx-sync
+wrangler queues create idx-sync-dlq
+wrangler kv namespace create COOKIE_KV  # copy id ke wrangler.toml
 
-// Get current market data
-const client = new IDXClient()
-const indices = await client.market.getIndexList()
-const stockSummary = await client.trading.getStockSummary('20240220')
+# Browser Rendering: enable di dashboard CF
+#   https://dash.cloudflare.com -> Workers -> Browser Rendering
+#   Free Explorer tier: 10 jam/bulan, no kartu kredit needed
+
+# Generate + apply schema (38 tabel)
+npm run db:generate
+npm run db:migrate:remote
+
+# Deploy
+wrangler deploy
+# → https://bursarium.<your-subdomain>.workers.dev
+
+# Trigger sync first time (manual, lewat queue)
+# atau tunggu cron daily 18:30 WIB
+wrangler queues consumer add idx-sync ...  # see MIGRATION.md
 ```
 
-For detailed usage examples, see [USAGE.md](USAGE.md).
+---
 
-## Module Overview
+## API contract
 
-**Corporate Modules:**
+Semua list endpoint return shape konsisten:
 
-- `syncCompanyProfile()` - Company metadata and profiles
-- `syncCompanyAnnouncement()` - Corporate news and announcements
-- `syncFinancialRatio()` - Financial indicators (PER, PBV, ROE, DER)
-- `syncFinancialReport()` - Detailed financial reports
-- `syncCompanyDividend()` - Dividend payment data
-- `syncStockSplit()` - Stock split events
-- `syncNewListing()` - IPO and new listings
-- `syncCompanyDelisting()` - Delisted companies
-
-**Market Modules:**
-
-- `syncDailyIndex()` - Daily index performance
-- `syncIndexList()` - Current index prices
-- `syncIndexSummary()` - Daily index snapshots
-- `syncForeignTrading()` - Foreign investor flows
-- `syncTopGainer()` - Top gaining stocks
-- `syncTopLoser()` - Top losing stocks
-
-**Trading Modules:**
-
-- `syncStockSummary()` - Daily OHLC and volume data
-- `syncTradeSummary()` - Market aggregate data
-- `syncBrokerSummary()` - Broker trading activity
-- `syncTradingDaily()` - Real-time price snapshots
-- `syncTradingSS()` - Historical trading data
-
-**Participants Modules:**
-
-- `syncBrokerParticipant()` - Exchange member brokers
-- `syncDealerParticipant()` - Primary dealers
-- `syncProfileParticipant()` - Participant profiles
-
-**General Modules:**
-
-- `syncMarketCalendar()` - Trading holidays and events
-- `syncSecurityStock()` - Master security list
-
-## Project Structure
-
-```text
-.
-├── src/                  # Core modules and backend implementation
-│   ├── Backend/          # Task automation, schemas, and sync logic
-│   ├── Company/          # Corporate information endpoints
-│   ├── Market/           # Market and index endpoints
-│   ├── Participants/     # Broker and dealer endpoints
-│   ├── Statistics/       # Stock activity endpoints
-│   ├── Trading/          # Trading summary endpoints
-│   └── Client.ts         # Main API client wrapper
-├── tests/                # Deno unit test suites
-├── sample/               # Generator for sample documentation
-└── data/                 # SQLite database storage
+```json
+{
+  "data": [...],
+  "meta": { "limit": 50, "offset": 0, "total": 845 }
+}
 ```
 
-## License
+Pagination universal: `?limit=50&offset=100&total=1`. Limit max 500, offset max 100K.
 
-This project is licensed under the MIT license. See the [LICENSE](LICENSE) file for more info.
+### Endpoint tree
+
+```
+GET /                            ← resource map
+GET /health                      ← liveness + D1 ping
+GET /companies                   ← all listed companies
+GET /companies/:code             ← single company + detail
+GET /companies/:code/announcements
+GET /companies/:code/financial-reports
+GET /companies/:code/issued-history
+GET /securities                  ← ?code=BBCA&board=Utama
+GET /stock-screener              ← analytical metrics, 26 columns
+GET /suspend
+GET /relisting
+GET /announcements               ← ?dateFrom=20260101&dateTo=20260301
+GET /market/indices
+GET /market/indices/:code/chart  ← ?period=1D|1W|1M|1Q|1Y
+GET /market/calendar             ← ?date=20260224
+GET /market/daily-index          ← ?year=2026&month=2
+GET /market/sectoral-movement    ← ?year=2026&month=2
+GET /market/index-summary        ← ?date=20260224
+GET /trading/summary
+GET /trading/stock-summary       ← ?date=20260224
+GET /trading/broker-summary      ← ?date=20260224
+GET /trading/{top-gainer|top-loser|domestic|foreign|active-volume|active-value|active-frequency|industry}
+                                 ← ?year&month
+GET /trading/company/:code/{daily|summary}
+GET /data/{additional-listing|delisting|dividend|financial-ratio|new-listing|right-offering|stock-split}
+                                 ← ?year&month
+GET /participants/{brokers|dealers|profiles}
+```
+
+> Note: progres port endpoint dilacak di [MIGRATION.md](./MIGRATION.md). Saat ini (skeleton commit) **8/40+ route sudah live**.
+
+---
+
+## Arsitektur
+
+```mermaid
+flowchart LR
+    User[Client] -->|HTTP| Hono[Hono router<br/>worker/routes/*]
+    Hono -->|read| D1[(D1: idx-api)]
+
+    Cron[Cron Trigger<br/>daily 18:30 WIB<br/>monthly day-1] --> Sched[scheduled handler]
+    Sched -->|warm cookies| Browser[Browser Rendering<br/>~20s, 1x per run]
+    Browser -->|cache 25min| KV[(COOKIE_KV)]
+    Sched -->|sendBatch| Q[(SYNC_QUEUE)]
+    Q --> Cons[queue consumer<br/>1 msg per sync]
+    Cons -->|read cookies| KV
+    Cons -->|fetch IDX| IDX[(idx.co.id)]
+    Cons -->|upsert| D1
+    Q -.->|max retries exhausted| DLQ[(idx-sync-dlq)]
+```
+
+Tiga concerns dipisah eksplisit:
+
+1. **API tier** — Hono + D1 read, scale otomatis di edge
+2. **Cookie tier** — Browser Rendering warm IDX session 1x per cron, KV cache, semua consumer reuse
+3. **Sync tier** — Cron Trigger fan-out ke Queue, consumer process 1 sync per message dengan retry + DLQ
+
+Detail lengkap arsitektur + measured timings ada di [MIGRATION.md](./MIGRATION.md).
+
+---
+
+## Cost (free tier math)
+
+| Komponen | Free tier | Estimasi pemakaian | % budget |
+|----------|-----------|-------------------|----------|
+| Workers requests | 100K/hari | ~5K/hari (small audience) | 5% |
+| D1 storage | 5 GB | <500 MB (38 tabel × ~1 tahun data) | <10% |
+| D1 reads | 5M/hari | ~50K/hari | 1% |
+| D1 writes | 100K/hari | ~30K/hari (38 sync × avg 800 rows) | 30% |
+| Queue ops | 1M/bulan | ~660 ops/bulan (22 sync × 30 hari) | <1% |
+| Browser Rendering | 10 jam/bulan | ~10 menit/bulan | **1.7%** |
+| KV reads | 100K/hari | ~3K/hari (1 read per consumer batch) | 3% |
+
+**Total: $0/bulan** untuk skala personal/small team. Paid Workers ($5/bulan) buka headroom 10-50x.
+
+---
+
+## Limitasi & known issues
+
+- **Sync hari ini (April 2026)** = data close kemarin (IDX tutup weekend). Bursarium bukan real-time tick.
+- **IDX kadang ubah field names** — kalau ada field baru di response, sync tetap jalan tapi field baru ke-skip sampai schema ditambah.
+- **D1 free tier write throughput** — bulk import historical (multi-year) bisa kena rate limit; gunakan chunked sync.
+- **Cookie warmer race condition** — 2 cron fire bersamaan bisa double-warm. Mitigasi: KV check + 20-min freshness window. Belum diimplementasi locking eksplisit.
+- **Schema tidak di-version** — kalau ubah `src/Backend/Schemas/`, migrasi D1 manual. Drizzle Kit handle ini.
+
+---
+
+## Roadmap
+
+- [x] Workers + Hono + D1 skeleton
+- [x] Cron Trigger → Queue fan-out
+- [x] Browser Rendering cookie warmer + KV cache
+- [x] Diagnostic endpoints (`/_test/*`)
+- [ ] Bulk port semua route (8/40+ done)
+- [ ] Bulk port semua sync job (1/38 done)
+- [ ] Vitest test suite
+- [ ] Static asset (company logos) via R2
+- [ ] OpenAPI spec + Swagger UI
+- [ ] Public Bursarium instance (read-only) di `bursarium.idx.id` atau similar
+- [ ] CLI client (`bursa` command)
+- [ ] Webhook subscriptions for corporate actions
+- [ ] Drop legacy Deno files
+
+---
+
+## Berdasarkan & credit
+
+Bursarium = port + arsitektur ulang dari **[NeaByteLab/IDX-API](https://github.com/NeaByteLab/IDX-API)**.
+
+Yang **dipertahankan** dari upstream:
+- Semua 38 schema Drizzle (`src/Backend/Schemas/`) — vanilla `sqlite-core`, portable
+- Logic mapping IDX response → entity
+- Endpoint coverage & pagination contract
+- MIT license
+
+Yang **diubah**:
+- Runtime: Deno → Cloudflare Workers
+- Server: `@neabyte/deserve` Router → Hono
+- Database: local SQLite via `@libsql/client` → D1 binding
+- Cron: monolithic `Cron.ts` → Cron Trigger + Queue + Consumer fan-out
+- Bot bypass: in-process cookie cache → Browser Rendering + KV
+- Lint: `deno fmt+lint` → Biome
+
+Terima kasih ke @NeaByteLab atas data pipeline awal yang solid + 38 schema yang well-designed. Bursarium berdiri di atas pekerjaan beliau.
+
+---
+
+## Lisensi
+
+MIT — sama dengan upstream. Pakai bebas, no warranty. Lihat [LICENSE](./LICENSE).
+
+---
+
+## Kontribusi
+
+Issue + PR welcome. Sebelum bulk port menyusul, fokus utama saat ini:
+
+1. Smoke test production deploy (tested locally, belum di-deploy real)
+2. Verifikasi sustainability (cookie cache stable >24 jam? IDX tetap accept di scale?)
+3. Bulk port routes & syncs dari upstream
+
+Lihat [SMOKE-TEST.md](./SMOKE-TEST.md) untuk dekisi-tree pivot kalau Worker fetch tiba-tiba di-block.
+
+---
+
+<div align="center">
+<sub>Built dengan ❤️ untuk komunitas developer Indonesia. Karena data publik IDX harusnya gampang diakses.</sub>
+</div>

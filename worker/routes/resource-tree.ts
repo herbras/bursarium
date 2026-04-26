@@ -63,9 +63,12 @@ export const resourceRouter = new Hono<{ Bindings: Env }>()
 
 resourceRouter.get('/', (c) =>
   c.json({
-    name: 'IDX API (Cloudflare Workers)',
-    version: '0.1.0-worker.1',
+    name: 'Bursarium',
+    tagline: 'IDX data at the edge',
+    version: '0.1.0',
     docs: 'Pagination: limit (default 50, max 500), offset. Add ?total=1 for total count.',
+    upstream: 'https://github.com/NeaByteLab/IDX-API',
+    repo: 'https://github.com/herbras/bursarium',
     resources: resourceTree
   })
 )

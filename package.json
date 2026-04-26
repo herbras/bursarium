@@ -1,7 +1,7 @@
 {
-  "name": "idx-api-worker",
-  "version": "0.1.0-worker.1",
-  "description": "Indonesian Stock Exchange API on Cloudflare Workers (Hono + D1 + Queues).",
+  "name": "bursarium",
+  "version": "0.1.0",
+  "description": "IDX (Indonesian Stock Exchange) data at the edge — Cloudflare Workers + Hono + D1.",
   "private": true,
   "type": "module",
   "scripts": {

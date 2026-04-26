@@ -6,7 +6,7 @@
 #
 # Replace the placeholder UUIDs/IDs below after creating resources.
 
-name = "idx-api"
+name = "bursarium"
 main = "worker/index.ts"
 compatibility_date = "2025-12-01"
 compatibility_flags = ["nodejs_compat"]
