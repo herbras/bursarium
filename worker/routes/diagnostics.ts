@@ -14,6 +14,18 @@ import { IdxClient } from '../lib/client.ts'
 import { clearCachedCookies, getCachedCookies } from '../lib/cookie-cache.ts'
 import { warmCookies } from '../lib/cookie-warmer.ts'
 import { syncIndexList } from '../sync/index-list.ts'
+import { syncCompanyProfile } from '../sync/company-profile.ts'
+import { syncSecurityStock } from '../sync/security-stock.ts'
+import { syncCompanyRelisting } from '../sync/company-relisting.ts'
+import { syncCompanySuspend } from '../sync/company-suspend.ts'
+import { syncStockScreener } from '../sync/stock-screener.ts'
+import { syncTradeSummary } from '../sync/trade-summary.ts'
+import {
+  syncParticipantBroker,
+  syncParticipantDealer,
+  syncParticipantProfile
+} from '../sync/participants.ts'
+import { syncTopGainer, syncTopLoser } from '../sync/top-movers.ts'
 import type { Env } from '../lib/types.ts'
 
 export const diagnosticsRouter = new Hono<{ Bindings: Env & { DIAG_TOKEN?: string } }>()
@@ -75,18 +87,88 @@ diagnosticsRouter.get('/run-sync', async (c) => {
   const client = new IdxClient(c.env.IDX_BASE_URL, cached?.cookieHeader ?? '')
 
   try {
-    if (kind === 'indexList') {
-      const result = await syncIndexList(c.env.DB, client)
-      return c.json({
-        kind,
-        status: 'ok',
-        durationMs: Date.now() - start,
-        usedCachedCookies: cached !== null,
-        cookieSource: cached?.source,
-        result
-      })
+    let result: { count: number } | undefined
+    const yearStr = c.req.query('year')
+    const monthStr = c.req.query('month')
+    const year = yearStr ? Number.parseInt(yearStr, 10) : undefined
+    const month = monthStr ? Number.parseInt(monthStr, 10) : undefined
+
+    switch (kind) {
+      case 'indexList':
+        result = await syncIndexList(c.env.DB, client)
+        break
+      case 'companyProfile':
+        result = await syncCompanyProfile(c.env.DB, client)
+        break
+      case 'securityStock':
+        result = await syncSecurityStock(c.env.DB, client)
+        break
+      case 'companyRelisting':
+        result = await syncCompanyRelisting(c.env.DB, client)
+        break
+      case 'companySuspend':
+        result = await syncCompanySuspend(c.env.DB, client)
+        break
+      case 'stockScreener':
+        result = await syncStockScreener(c.env.DB, client)
+        break
+      case 'tradeSummary':
+        result = await syncTradeSummary(c.env.DB, client)
+        break
+      case 'brokerParticipant':
+        result = await syncParticipantBroker(c.env.DB, client)
+        break
+      case 'dealerParticipant':
+        result = await syncParticipantDealer(c.env.DB, client)
+        break
+      case 'profileParticipant':
+        result = await syncParticipantProfile(c.env.DB, client)
+        break
+      case 'topGainer':
+      case 'topLoser': {
+        if (!year || !month) {
+          return c.json(
+            { error: `kind '${kind}' requires query params year=YYYY&month=1-12` },
+            400
+          )
+        }
+        result =
+          kind === 'topGainer'
+            ? await syncTopGainer(c.env.DB, client, year, month)
+            : await syncTopLoser(c.env.DB, client, year, month)
+        break
+      }
+      default:
+        return c.json(
+          {
+            error: `kind '${kind}' not yet ported`,
+            available: [
+              'indexList',
+              'companyProfile',
+              'securityStock',
+              'companyRelisting',
+              'companySuspend',
+              'stockScreener',
+              'tradeSummary',
+              'brokerParticipant',
+              'dealerParticipant',
+              'profileParticipant',
+              'topGainer',
+              'topLoser'
+            ]
+          },
+          400
+        )
     }
-    return c.json({ error: `kind '${kind}' not yet ported. Available: indexList` }, 400)
+
+    return c.json({
+      kind,
+      status: 'ok',
+      durationMs: Date.now() - start,
+      usedCachedCookies: cached !== null,
+      cookieSource: cached?.source,
+      result
+    })
   } catch (err) {
     return c.json(
       {

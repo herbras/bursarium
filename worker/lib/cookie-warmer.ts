@@ -47,36 +47,45 @@ export async function ensureFreshCookies(
   return { cached, warmed }
 }
 
-// Force-warm cookies. Tries Browser Rendering first (most reliable),
-// falls back to Workers fetch (cheap but bot-detectable).
+// Force-warm cookies. Workers fetch is preferred — empirically returns
+// 3 cookies (__cf_bm + _cfuvid + auth.strategy) which IDX endpoints
+// require, vs Browser Rendering returning only 1. Browser is fallback
+// only if Workers fetch returns thin or empty cookies.
 export async function warmCookies(env: Env): Promise<WarmResult> {
   const start = Date.now()
 
-  // Path A: Browser Rendering
-  if (env.BROWSER) {
+  // Path A: Workers fetch (preferred — fast, complete cookie set)
+  let cookieHeader = await warmViaWorkersFetch(env.IDX_BASE_URL)
+  let count = countCookies(cookieHeader)
+
+  // Path B: Browser fallback if WF gave us suspiciously few cookies
+  if (count < 2 && env.BROWSER) {
     try {
-      const cookieHeader = await warmViaBrowser(env)
+      const browserCookies = await warmViaBrowser(env)
+      const browserCount = countCookies(browserCookies)
+      if (browserCount > count) {
+        cookieHeader = browserCookies
+        count = browserCount
+      }
       await setCachedCookies(env.COOKIE_KV, cookieHeader, 'browser-rendering')
       return {
         source: 'browser-rendering',
         cookieHeader,
         durationMs: Date.now() - start,
-        cookieCount: countCookies(cookieHeader)
+        cookieCount: count
       }
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err)
-      console.warn(`[cookie-warmer] browser path failed: ${reason} — falling back to workers fetch`)
+      console.warn(`[cookie-warmer] browser fallback failed: ${reason}`)
     }
   }
 
-  // Path B: Workers fetch
-  const cookieHeader = await warmViaWorkersFetch(env.IDX_BASE_URL)
   await setCachedCookies(env.COOKIE_KV, cookieHeader, 'workers-fetch')
   return {
     source: 'workers-fetch',
     cookieHeader,
     durationMs: Date.now() - start,
-    cookieCount: countCookies(cookieHeader)
+    cookieCount: count
   }
 }
 
