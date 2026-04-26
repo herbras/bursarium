@@ -13,6 +13,7 @@
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { logger as honoLogger } from 'hono/logger'
+import { contentNegotiation } from './lib/content-negotiation.ts'
 import { healthRouter } from './routes/health.ts'
 import { resourceRouter } from './routes/resource-tree.ts'
 import { companiesRouter } from './routes/companies.ts'
@@ -37,6 +38,8 @@ const app = new Hono<{ Bindings: Env }>()
 
 app.use('*', cors({ origin: '*' }))
 app.use('*', honoLogger())
+// JSON by default, TOON for agent clients (?format=toon or Accept/UA match).
+app.use('*', contentNegotiation())
 
 app.route('/', resourceRouter)
 app.route('/health', healthRouter)

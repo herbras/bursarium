@@ -113,6 +113,41 @@ Semua list endpoint return shape konsisten:
 
 Pagination universal: `?limit=50&offset=100&total=1`. Limit max 500, offset max 100K.
 
+### JSON default, TOON untuk agen AI
+
+Bursarium serve **JSON by default** (untuk browser, curl, fetch), dan otomatis switch ke **[TOON](https://github.com/toon-format/toon)** (Token-Oriented Object Notation) kalau request datang dari AI agent. TOON ~40% lebih hemat token saat di-feed ke LLM.
+
+**Cara klien dapat TOON:**
+
+| Cara | Contoh |
+|------|--------|
+| Query param eksplisit | `GET /market/indices?format=toon` |
+| Accept header | `Accept: text/toon` |
+| User-Agent agent | `User-Agent: Claude-Code/1.0` (auto-detected) |
+
+**Override ke JSON** kalau agent UA tapi mau JSON: `?format=json`.
+
+Contoh perbandingan size pada `/market/indices?limit=10`:
+
+```text
+JSON: 998 bytes
+TOON: 572 bytes  (-42.7%)
+```
+
+TOON output (dirender CSV-like untuk uniform arrays):
+```
+data[10]{code,close,change,percent,current}:
+  COMPOSITE,"7.378,606","-249,116","-3,38%","7.129,490"
+  LQ45,"715,878","-25,114","-3,51%","690,764"
+  ...
+meta:
+  limit: 10
+  offset: 0
+  total: 45
+```
+
+Agent UA yang dideteksi otomatis: Claude, Anthropic, GPT, OpenAI, Cursor, Cody, Copilot, Gemini, Mistral, Perplexity, ChatGPT, dll. Header `x-bursarium-format: toon` ditambahkan ke response saat TOON aktif.
+
 ### Endpoint tree
 
 ```
@@ -209,7 +244,8 @@ Detail lengkap arsitektur + measured timings ada di [MIGRATION.md](./MIGRATION.m
 - [x] Cron Trigger → Queue fan-out
 - [x] Browser Rendering cookie warmer + KV cache
 - [x] Diagnostic endpoints (`/_test/*`)
-- [ ] Bulk port semua route (8/40+ done)
+- [x] Bulk port semua route (34/34 done — termasuk 7 endpoint baru di `/data/*` yang belum ada di upstream)
+- [x] Content negotiation: JSON default + TOON untuk agen AI
 - [ ] Bulk port semua sync job (1/38 done)
 - [ ] Vitest test suite
 - [ ] Static asset (company logos) via R2
