@@ -10,9 +10,7 @@
 //   curl 'https://idx-api.workers.dev/_test/dataset-size?token=...'
 
 import { Hono } from 'hono'
-import { sql } from 'drizzle-orm'
 import { IdxClient } from '../lib/client.ts'
-import { getDb, schemas } from '../lib/db.ts'
 import { syncIndexList } from '../sync/index-list.ts'
 import type { Env } from '../lib/types.ts'
 
@@ -100,24 +98,21 @@ diagnosticsRouter.get('/run-sync', async (c) => {
 // Useful to gauge whether the dataset will fit within D1 5GB free or
 // require paid tier ($5/mo).
 diagnosticsRouter.get('/dataset-size', async (c) => {
-  const db = getDb(c.env.DB)
-  const tableNames = Object.keys(schemas).filter((k) => {
-    // biome-ignore lint/suspicious/noExplicitAny: schema export is a typeof bag
-    const t = (schemas as Record<string, any>)[k]
-    return t && typeof t === 'object' && '_' in t && t._.brand === 'Table'
-  })
+  // Source of truth: sqlite_master (avoid Drizzle introspection quirks).
+  // Filter out internal D1/SQLite tables we don't have permission to read.
+  const tablesQ = await c.env.DB.prepare(
+    "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_cf_%' AND name != 'd1_migrations' ORDER BY name"
+  ).all<{ name: string }>()
 
   const counts: Record<string, number | string> = {}
-  for (const name of tableNames) {
+  for (const row of tablesQ.results ?? []) {
+    const name = row.name
     try {
-      // biome-ignore lint/suspicious/noExplicitAny: dynamic table lookup
-      const table = (schemas as Record<string, any>)[name]
-      const tableName = table[Symbol.for('drizzle:Name')] ?? name
-      const result = await db.run(sql.raw(`SELECT COUNT(*) AS c FROM ${tableName}`))
-      // D1 returns { results: [{ c: number }], ... }
-      // biome-ignore lint/suspicious/noExplicitAny: D1 result shape
-      const row = (result.results?.[0] ?? {}) as any
-      counts[name] = typeof row.c === 'number' ? row.c : 0
+      // Whitelist via sqlite_master query above — safe to interpolate.
+      const result = await c.env.DB.prepare(
+        `SELECT COUNT(*) AS c FROM "${name}"`
+      ).first<{ c: number }>()
+      counts[name] = typeof result?.c === 'number' ? result.c : 0
     } catch (err) {
       counts[name] = `err: ${err instanceof Error ? err.message : String(err)}`
     }
@@ -130,7 +125,7 @@ diagnosticsRouter.get('/dataset-size', async (c) => {
 
   return c.json({
     summary: 'D1 row counts by table',
-    tableCount: tableNames.length,
+    tableCount: Object.keys(counts).length,
     totalRows,
     freeTierLimit: '5 GB storage / 5M reads/day / 100K writes/day',
     interpretation:
