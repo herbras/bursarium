@@ -22,6 +22,11 @@ import {
   stockScreenerRouter,
   suspendRouter
 } from './routes/simple.ts'
+import { announcementsRouter } from './routes/announcements.ts'
+import { marketRouter } from './routes/market.ts'
+import { tradingRouter } from './routes/trading.ts'
+import { dataRouter } from './routes/data.ts'
+import { participantsRouter } from './routes/participants.ts'
 import { diagnosticsRouter } from './routes/diagnostics.ts'
 import { handleScheduled } from './sync/dispatcher.ts'
 import { handleQueue } from './sync/consumer.ts'
@@ -40,6 +45,11 @@ app.route('/securities', securitiesRouter)
 app.route('/stock-screener', stockScreenerRouter)
 app.route('/suspend', suspendRouter)
 app.route('/relisting', relistingRouter)
+app.route('/announcements', announcementsRouter)
+app.route('/market', marketRouter)
+app.route('/trading', tradingRouter)
+app.route('/data', dataRouter)
+app.route('/participants', participantsRouter)
 app.route('/_test', diagnosticsRouter)
 
 app.notFound((c) => c.json({ error: 'not found' }, 404))
