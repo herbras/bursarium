@@ -198,6 +198,107 @@ kseiRouter.get('/top-by-type', async (c) => {
   })
 })
 
+// Find tickers with the most similar SHAREHOLDER PROFILE — same mix of
+// investor types holding similar shares. KSEI's public data is
+// aggregate-only (no named investors), so this surfaces *behavioural*
+// neighbours: stocks that the same kind of investor tends to own.
+//
+// Method: build an 18-D vector per ticker from the 9 local + 9 foreign
+// type columns, normalize to share-of-total (so ticker size doesn't
+// dominate), then cosine similarity vs the target.
+//
+//   GET /ksei/similar/:code?limit=10
+const TYPE_COLS = [
+  'localIs','localCp','localPf','localIb','localId','localMf','localSc','localFd','localOt',
+  'foreignIs','foreignCp','foreignPf','foreignIb','foreignId','foreignMf','foreignSc','foreignFd','foreignOt'
+] as const
+
+function compositionVector(row: Record<string, number | null>): number[] {
+  const total = (row.localTotal ?? 0) + (row.foreignTotal ?? 0)
+  if (total <= 0) return new Array(TYPE_COLS.length).fill(0)
+  return TYPE_COLS.map((c) => (row[c] ?? 0) / total)
+}
+
+function cosineSim(a: number[], b: number[]): number {
+  let dot = 0
+  let na = 0
+  let nb = 0
+  for (let i = 0; i < a.length; i++) {
+    const x = a[i] ?? 0
+    const y = b[i] ?? 0
+    dot += x * y
+    na += x * x
+    nb += y * y
+  }
+  if (na === 0 || nb === 0) return 0
+  return dot / (Math.sqrt(na) * Math.sqrt(nb))
+}
+
+kseiRouter.get('/similar/:code', async (c) => {
+  const code = c.req.param('code').toUpperCase()
+  const db = getDb(c.env.DB)
+  const limit = Math.min(50, Math.max(1, Number.parseInt(c.req.query('limit') ?? '10', 10)))
+
+  const latest = await db
+    .select({ reportDate: schemas.kseiOwnership.reportDate })
+    .from(schemas.kseiOwnership)
+    .orderBy(desc(schemas.kseiOwnership.reportDate))
+    .limit(1)
+  const reportDate = latest[0]?.reportDate
+  if (!reportDate) return c.json({ data: [], meta: { code, total: 0 } })
+
+  const rows = await db
+    .select()
+    .from(schemas.kseiOwnership)
+    .where(
+      and(
+        eq(schemas.kseiOwnership.reportDate, reportDate),
+        eq(schemas.kseiOwnership.type, 'EQUITY')
+      )
+    )
+
+  const target = rows.find((r) => r.code === code)
+  if (!target) return c.json({ error: `no KSEI snapshot for ${code}` }, 404)
+
+  // biome-ignore lint/suspicious/noExplicitAny: row is dynamic schema
+  const targetVec = compositionVector(target as any)
+  const targetTotal = (target.localTotal ?? 0) + (target.foreignTotal ?? 0) || target.totalShares
+  const targetForeignPct = targetTotal ? ((target.foreignTotal ?? 0) / targetTotal) * 100 : 0
+
+  const ranked = rows
+    .filter((r) => r.code !== code)
+    .map((r) => {
+      // biome-ignore lint/suspicious/noExplicitAny: row is dynamic schema
+      const vec = compositionVector(r as any)
+      const sim = cosineSim(targetVec, vec)
+      const total = (r.localTotal ?? 0) + (r.foreignTotal ?? 0) || r.totalShares
+      const foreignPct = total ? ((r.foreignTotal ?? 0) / total) * 100 : 0
+      return {
+        code: r.code,
+        similarity: Number(sim.toFixed(4)),
+        foreignPercent: Number(foreignPct.toFixed(2)),
+        totalShares: r.totalShares,
+        price: r.price ?? null
+      }
+    })
+    .sort((a, b) => b.similarity - a.similarity)
+    .slice(0, limit)
+
+  return c.json({
+    data: ranked,
+    meta: {
+      code,
+      reportDate,
+      targetForeignPercent: Number(targetForeignPct.toFixed(2)),
+      // Herfindahl-like concentration: sum of squared shares. Higher = more
+      // concentrated holding profile (closer to 1 = single-type dominance).
+      concentration: Number(
+        targetVec.reduce((s, v) => s + v * v, 0).toFixed(4)
+      )
+    }
+  })
+})
+
 // Foreign flow: top tickers by absolute change in foreign ownership between
 // the two latest snapshots. Default returns top 50 by absolute delta.
 kseiRouter.get('/foreign-flow', async (c) => {
