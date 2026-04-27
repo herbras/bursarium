@@ -144,11 +144,15 @@ export async function syncKseiOwnership(
   const rows = await fetchAndParse(client, date)
   if (rows.length === 0) return { count: 0 }
   const db = getDb(d1)
-  const count = await batchUpsert(db, rows, (row) =>
-    db
-      .insert(schemas.kseiOwnership)
-      .values(row)
-      .onConflictDoUpdate({ target: schemas.kseiOwnership.id, set: row })
+  const count = await batchUpsert(
+    db,
+    rows,
+    (row) =>
+      db
+        .insert(schemas.kseiOwnership)
+        .values(row)
+        .onConflictDoUpdate({ target: schemas.kseiOwnership.id, set: row }),
+    { chunkSize: 10 }
   )
   return { count }
 }
@@ -167,29 +171,72 @@ export async function syncKseiOwnership(
  */
 const KV_TTL_SECONDS = 60 * 60
 
+// Raw SQL prepared once, reused across all rows. Drizzle's per-row SQL
+// generation is the CPU hot path — 25-column upserts with ON CONFLICT DO
+// UPDATE blow the 10ms Workers Free budget around 20 rows. Hand-rolling
+// the statement and binding values directly cuts CPU by ~10x.
+const KSEI_UPSERT_SQL = `INSERT INTO ksei_ownership (
+  id, code, type, report_date, total_shares, price,
+  local_is, local_cp, local_pf, local_ib, local_id, local_mf, local_sc, local_fd, local_ot, local_total,
+  foreign_is, foreign_cp, foreign_pf, foreign_ib, foreign_id, foreign_mf, foreign_sc, foreign_fd, foreign_ot, foreign_total
+) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+ON CONFLICT(id) DO UPDATE SET
+  code=excluded.code, type=excluded.type, report_date=excluded.report_date,
+  total_shares=excluded.total_shares, price=excluded.price,
+  local_is=excluded.local_is, local_cp=excluded.local_cp, local_pf=excluded.local_pf,
+  local_ib=excluded.local_ib, local_id=excluded.local_id, local_mf=excluded.local_mf,
+  local_sc=excluded.local_sc, local_fd=excluded.local_fd, local_ot=excluded.local_ot,
+  local_total=excluded.local_total,
+  foreign_is=excluded.foreign_is, foreign_cp=excluded.foreign_cp, foreign_pf=excluded.foreign_pf,
+  foreign_ib=excluded.foreign_ib, foreign_id=excluded.foreign_id, foreign_mf=excluded.foreign_mf,
+  foreign_sc=excluded.foreign_sc, foreign_fd=excluded.foreign_fd, foreign_ot=excluded.foreign_ot,
+  foreign_total=excluded.foreign_total`
+
+function bindRow(stmt: D1PreparedStatement, r: KseiRow): D1PreparedStatement {
+  return stmt.bind(
+    r.id, r.code, r.type, r.reportDate, r.totalShares, r.price ?? null,
+    r.localIs ?? null, r.localCp ?? null, r.localPf ?? null,
+    r.localIb ?? null, r.localId ?? null, r.localMf ?? null,
+    r.localSc ?? null, r.localFd ?? null, r.localOt ?? null, r.localTotal ?? null,
+    r.foreignIs ?? null, r.foreignCp ?? null, r.foreignPf ?? null,
+    r.foreignIb ?? null, r.foreignId ?? null, r.foreignMf ?? null,
+    r.foreignSc ?? null, r.foreignFd ?? null, r.foreignOt ?? null, r.foreignTotal ?? null
+  )
+}
+
 /**
- * Bulk insert pre-parsed rows. Caller supplies JSON-decoded KseiRow[]
- * (parsed locally, e.g. by backfill script). Worker only does D1 batch
- * upsert — no fflate, no parsing, ~1-3s CPU even for 500 rows.
+ * Bulk insert pre-parsed rows using raw D1 prepared statements. Skips
+ * Drizzle ORM entirely — one SQL string is parsed once, then bound against
+ * each row. Throughput: 500+ rows comfortably fit Workers Free 10ms CPU.
  */
 export async function insertKseiRows(
   d1: D1Database,
   rawRows: unknown[]
 ): Promise<{ count: number }> {
   if (!Array.isArray(rawRows) || rawRows.length === 0) return { count: 0 }
-  // Type-narrow defensively — mostly trust the caller.
   const rows = rawRows.filter(
     (r): r is KseiRow =>
       typeof r === 'object' && r !== null && 'id' in r && 'code' in r && 'reportDate' in r
   )
-  const db = getDb(d1)
-  const count = await batchUpsert(db, rows, (row) =>
-    db
-      .insert(schemas.kseiOwnership)
-      .values(row)
-      .onConflictDoUpdate({ target: schemas.kseiOwnership.id, set: row })
-  )
-  return { count }
+  if (rows.length === 0) return { count: 0 }
+
+  const stmt = d1.prepare(KSEI_UPSERT_SQL)
+  const CHUNK = 100
+  let ok = 0
+  for (let i = 0; i < rows.length; i += CHUNK) {
+    const slice = rows.slice(i, i + CHUNK)
+    const bound = slice.map((r) => bindRow(stmt, r))
+    try {
+      await d1.batch(bound)
+      ok += slice.length
+    } catch (err) {
+      console.error(
+        `[insertKseiRows] chunk ${i / CHUNK + 1} failed:`,
+        err instanceof Error ? err.message : String(err)
+      )
+    }
+  }
+  return { count: ok }
 }
 
 /**
@@ -251,11 +298,15 @@ export async function syncKseiOwnershipChunk(
   const slice = rows.slice(offset, offset + limit)
   if (slice.length === 0) return { count: 0, total: rows.length, cached, phase: 'persisted' }
   const db = getDb(d1)
-  const count = await batchUpsert(db, slice, (row) =>
-    db
-      .insert(schemas.kseiOwnership)
-      .values(row)
-      .onConflictDoUpdate({ target: schemas.kseiOwnership.id, set: row })
+  const count = await batchUpsert(
+    db,
+    slice,
+    (row) =>
+      db
+        .insert(schemas.kseiOwnership)
+        .values(row)
+        .onConflictDoUpdate({ target: schemas.kseiOwnership.id, set: row }),
+    { chunkSize: 10 }
   )
   return { count, total: rows.length, cached, phase: 'persisted' }
 }

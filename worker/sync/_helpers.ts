@@ -49,14 +49,16 @@ type DrizzleStmt = BatchItem<any>
 export async function batchUpsert<T>(
   db: Database,
   rows: T[],
-  prepare: (row: T) => DrizzleStmt
+  prepare: (row: T) => DrizzleStmt,
+  options: { chunkSize?: number } = {}
 ): Promise<number> {
   if (rows.length === 0) return 0
   let ok = 0
   let chunksFailed = 0
+  const chunk = options.chunkSize ?? BATCH_CHUNK
 
-  for (let i = 0; i < rows.length; i += BATCH_CHUNK) {
-    const slice = rows.slice(i, i + BATCH_CHUNK)
+  for (let i = 0; i < rows.length; i += chunk) {
+    const slice = rows.slice(i, i + chunk)
     // biome-ignore lint/suspicious/noExplicitAny: BatchItem array typing is delicate
     const stmts = slice.map(prepare) as any
     try {
@@ -68,7 +70,7 @@ export async function batchUpsert<T>(
       // biome-ignore lint/suspicious/noExplicitAny: D1 errors expose cause
       const cause = (err as any)?.cause
       console.error(
-        `[batchUpsert] chunk ${i / BATCH_CHUNK + 1} of ${Math.ceil(rows.length / BATCH_CHUNK)} ` +
+        `[batchUpsert] chunk ${i / chunk + 1} of ${Math.ceil(rows.length / chunk)} ` +
           `(rows ${i}-${i + slice.length - 1}) failed: ${message}\n` +
           `cause: ${JSON.stringify(cause, null, 2)}\n` +
           `first row in chunk: ${JSON.stringify(slice[0]).slice(0, 500)}`
