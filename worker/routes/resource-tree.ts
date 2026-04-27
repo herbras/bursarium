@@ -62,7 +62,8 @@ const resourceTree = {
     'ownership/:code': 'GET — latest ownership snapshot per ticker',
     'ownership/:code/history': 'GET limit, offset — historical ownership',
     'top-foreign-owned': 'GET limit, offset, date? — ranked by foreign %',
-    'foreign-flow': 'GET limit, offset — biggest MoM foreign delta'
+    'foreign-flow': 'GET limit, offset — biggest MoM foreign delta',
+    'top-by-type': 'GET type=local|foreign{Is|Cp|Pf|Ib|Id|Mf|Sc|Fd|Ot}, limit, offset, date? — ranked by one investor type'
   }
 }
 

@@ -124,6 +124,80 @@ kseiRouter.get('/top-foreign-owned', async (c) => {
   })
 })
 
+// Top tickers ranked by share of one specific investor type (e.g. mutual
+// funds, pension funds, individuals). Useful for "who owns the most BBCA-like
+// stocks via reksa dana" or "biggest pension-fund holdings on IDX".
+//
+//   GET /ksei/top-by-type?type=foreignMf&limit=20
+//   type ∈ { local|foreign }{Is|Cp|Pf|Ib|Id|Mf|Sc|Fd|Ot}
+//   Optional ?date=YYYYMMDD to pick an older snapshot (default = latest).
+const VALID_TYPES = new Set([
+  'localIs','localCp','localPf','localIb','localId','localMf','localSc','localFd','localOt',
+  'foreignIs','foreignCp','foreignPf','foreignIb','foreignId','foreignMf','foreignSc','foreignFd','foreignOt'
+])
+kseiRouter.get('/top-by-type', async (c) => {
+  const db = getDb(c.env.DB)
+  const { limit, offset } = getPagination(c.req.query())
+  const type = c.req.query('type') ?? ''
+  if (!VALID_TYPES.has(type)) {
+    return c.json(
+      { error: `type must be one of: ${Array.from(VALID_TYPES).join(', ')}` },
+      400
+    )
+  }
+  const dateParam = c.req.query('date')
+  let reportDate: number | null
+  if (dateParam && /^\d{8}$/.test(dateParam)) {
+    reportDate = Date.UTC(
+      Number(dateParam.slice(0, 4)),
+      Number(dateParam.slice(4, 6)) - 1,
+      Number(dateParam.slice(6, 8))
+    )
+  } else {
+    const latest = await db
+      .select({ reportDate: schemas.kseiOwnership.reportDate })
+      .from(schemas.kseiOwnership)
+      .orderBy(desc(schemas.kseiOwnership.reportDate))
+      .limit(1)
+    reportDate = latest[0]?.reportDate ?? null
+  }
+  if (!reportDate) return c.json({ data: [], meta: { limit, offset, type, total: 0 } })
+
+  // biome-ignore lint/suspicious/noExplicitAny: dynamic column on schema
+  const col = (schemas.kseiOwnership as any)[type]
+  const data = await db
+    .select()
+    .from(schemas.kseiOwnership)
+    .where(
+      and(
+        eq(schemas.kseiOwnership.reportDate, reportDate),
+        eq(schemas.kseiOwnership.type, 'EQUITY')
+      )
+    )
+    .orderBy(desc(col))
+    .limit(limit)
+    .offset(offset)
+
+  return c.json({
+    data: data.map((row) => {
+      const total = (row.localTotal ?? 0) + (row.foreignTotal ?? 0) || row.totalShares
+      // biome-ignore lint/suspicious/noExplicitAny: dynamic field access
+      const value = ((row as any)[type] ?? 0) as number
+      const pctOfTotal = total ? (value / total) * 100 : 0
+      return {
+        code: row.code,
+        type,
+        value,
+        pctOfTotal: Number(pctOfTotal.toFixed(4)),
+        totalShares: row.totalShares,
+        foreignTotal: row.foreignTotal,
+        localTotal: row.localTotal
+      }
+    }),
+    meta: { limit, offset, type, reportDate }
+  })
+})
+
 // Foreign flow: top tickers by absolute change in foreign ownership between
 // the two latest snapshots. Default returns top 50 by absolute delta.
 kseiRouter.get('/foreign-flow', async (c) => {
