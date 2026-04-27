@@ -22,6 +22,7 @@
     "@cloudflare/puppeteer": "^1.0.4",
     "@toon-format/toon": "^2.1.0",
     "drizzle-orm": "^0.45.1",
+    "fflate": "^0.8.2",
     "hono": "^4.10.0"
   },
   "devDependencies": {

@@ -55,6 +55,8 @@ export type SyncKind =
   | 'brokerSummary'
   | 'indexSummary'
   | 'companyAnnouncement'
+  // KSEI ownership (date = end-of-month YYYYMMDD)
+  | 'kseiOwnership'
 
 export interface SyncParams {
   year?: number

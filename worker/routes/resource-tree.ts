@@ -56,6 +56,13 @@ const resourceTree = {
     brokers: 'GET limit, offset, total?',
     dealers: 'GET limit, offset, total?',
     profiles: 'GET limit, offset, total?'
+  },
+  ksei: {
+    snapshots: 'GET — list available KSEI snapshot dates',
+    'ownership/:code': 'GET — latest ownership snapshot per ticker',
+    'ownership/:code/history': 'GET limit, offset — historical ownership',
+    'top-foreign-owned': 'GET limit, offset, date? — ranked by foreign %',
+    'foreign-flow': 'GET limit, offset — biggest MoM foreign delta'
   }
 }
 

@@ -44,6 +44,11 @@ import { syncStockSummary } from '../sync/stock-summary.ts'
 import { syncBrokerSummary } from '../sync/broker-summary.ts'
 import { syncIndexSummary } from '../sync/index-summary.ts'
 import { syncCompanyAnnouncement } from '../sync/company-announcement.ts'
+import {
+  insertKseiRows,
+  syncKseiOwnership,
+  syncKseiOwnershipChunk
+} from '../sync/ksei-ownership.ts'
 import type { Env } from '../lib/types.ts'
 
 export const diagnosticsRouter = new Hono<{ Bindings: Env & { DIAG_TOKEN?: string } }>()
@@ -90,6 +95,39 @@ diagnosticsRouter.get('/idx-fetch', async (c) => {
           : 'Mixed signals — inspect each check below.',
     checks
   })
+})
+
+// ---- KSEI bulk insert (pre-parsed) ----
+// Local script parses ZIP and POSTs an array of rows here. Worker just
+// runs D1 batch — no fflate, no string parsing — well within CPU budget.
+diagnosticsRouter.post('/ksei-bulk', async (c) => {
+  let body: unknown
+  try {
+    body = await c.req.json()
+  } catch {
+    return c.json({ error: 'invalid JSON body' }, 400)
+  }
+  if (!Array.isArray(body)) {
+    return c.json({ error: 'body must be a JSON array of KseiRow' }, 400)
+  }
+  const start = Date.now()
+  try {
+    const result = await insertKseiRows(c.env.DB, body)
+    return c.json({
+      status: 'ok',
+      durationMs: Date.now() - start,
+      result
+    })
+  } catch (err) {
+    return c.json(
+      {
+        status: 'error',
+        durationMs: Date.now() - start,
+        error: err instanceof Error ? err.message : String(err)
+      },
+      500
+    )
+  }
 })
 
 // ---- 2. Manual sync trigger ----
@@ -196,15 +234,51 @@ diagnosticsRouter.get('/run-sync', async (c) => {
       case 'stockSummary':
       case 'brokerSummary':
       case 'indexSummary':
-      case 'companyAnnouncement': {
+      case 'companyAnnouncement':
+      case 'kseiOwnership': {
         const date = c.req.query('date')
         if (!date) return c.json({ error: `kind '${kind}' requires date=YYYYMMDD` }, 400)
+
+        // KSEI supports optional chunk pagination via ?offset=N&chunkLimit=N
+        // to stay within Workers CPU budget on bigger months.
+        if (kind === 'kseiOwnership') {
+          const offsetStr = c.req.query('offset')
+          const chunkStr = c.req.query('chunkLimit')
+          const parseOnlyStr = c.req.query('parseOnly')
+          const parseOnly = parseOnlyStr === '1' || parseOnlyStr === 'true'
+          if (offsetStr !== undefined || chunkStr !== undefined || parseOnly) {
+            const offset = Number.parseInt(offsetStr ?? '0', 10) || 0
+            const limit = Number.parseInt(chunkStr ?? '500', 10) || 500
+            const r = await syncKseiOwnershipChunk(c.env.DB, client, date, c.env.COOKIE_KV, {
+              offset,
+              limit,
+              parseOnly
+            })
+            return c.json({
+              kind,
+              status: 'ok',
+              durationMs: Date.now() - start,
+              usedCachedCookies: cached !== null,
+              cookieSource: cached?.source,
+              result: {
+                count: r.count,
+                totalAvailable: r.total,
+                offset,
+                limit,
+                fromKvCache: r.cached,
+                phase: r.phase
+              }
+            })
+          }
+        }
+
         const dateFns: Record<string, typeof syncMarketCalendar> = {
           marketCalendar: syncMarketCalendar,
           stockSummary: syncStockSummary,
           brokerSummary: syncBrokerSummary,
           indexSummary: syncIndexSummary,
-          companyAnnouncement: syncCompanyAnnouncement
+          companyAnnouncement: syncCompanyAnnouncement,
+          kseiOwnership: syncKseiOwnership
         }
         const fn = dateFns[kind]
         if (!fn) return c.json({ error: `unknown date kind '${kind}'` }, 400)

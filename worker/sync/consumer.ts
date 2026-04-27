@@ -40,6 +40,7 @@ import { syncStockSummary } from './stock-summary.ts'
 import { syncBrokerSummary } from './broker-summary.ts'
 import { syncIndexSummary } from './index-summary.ts'
 import { syncCompanyAnnouncement } from './company-announcement.ts'
+import { syncKseiOwnership } from './ksei-ownership.ts'
 
 export async function handleQueue(batch: MessageBatch<SyncJob>, env: Env): Promise<void> {
   // Read cached cookies once per batch — feed them to the IdxClient so
@@ -145,7 +146,8 @@ async function runJob(env: Env, client: IdxClient, job: SyncJob): Promise<void> 
     case 'stockSummary':
     case 'brokerSummary':
     case 'indexSummary':
-    case 'companyAnnouncement': {
+    case 'companyAnnouncement':
+    case 'kseiOwnership': {
       const date = params.date
       if (!date) throw new Error(`${job.kind} requires params.date (YYYYMMDD)`)
       const r = await dispatchDate(job.kind, env, client, date)
@@ -201,6 +203,7 @@ async function dispatchDate(
     case 'brokerSummary': return syncBrokerSummary(env.DB, client, date)
     case 'indexSummary': return syncIndexSummary(env.DB, client, date)
     case 'companyAnnouncement': return syncCompanyAnnouncement(env.DB, client, date)
+    case 'kseiOwnership': return syncKseiOwnership(env.DB, client, date)
     default: throw new Error(`unsupported date kind: ${kind}`)
   }
 }

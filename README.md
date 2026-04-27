@@ -30,6 +30,7 @@ Bursarium = **edge-deployed wrapper untuk seluruh data publik IDX**. Sinkronisas
 | **Indeks** | index list (IHSG, LQ45, KOMPAS100, dll), daily index, index summary, index chart, sectoral movement |
 | **Market** | market calendar, stock screener (26 kolom analitik) |
 | **Participants** | broker participant, dealer participant, profile participant |
+| **KSEI ownership** | monthly shareholder breakdown per ticker (9 local + 9 foreign investor types — IS/CP/PF/IB/ID/MF/SC/FD/OT) |
 
 ---
 
@@ -183,6 +184,49 @@ GET /participants/{brokers|dealers|profiles}
 > Note: progres port endpoint dilacak di [MIGRATION.md](./MIGRATION.md). Saat ini (skeleton commit) **8/40+ route sudah live**.
 
 ---
+
+## KSEI ownership intelligence
+
+Bursarium ingests **KSEI monthly ownership snapshots** directly from `web.ksei.co.id` — public, no login required. KSEI (Kustodian Sentral Efek Indonesia) is the central securities depository for IDX; monthly snapshots are the authoritative source of shareholder composition for every listed Indonesian security.
+
+Per ticker per month: total shares + 9 local investor types + 9 foreign investor types (~3,400 EQUITY + WARRANT + BOND tickers).
+
+Endpoints:
+
+```
+GET /ksei/snapshots                         list available report dates
+GET /ksei/ownership/:code                   latest snapshot per ticker
+GET /ksei/ownership/:code/history           full history per ticker
+GET /ksei/top-foreign-owned?limit=N&date=?  ranked by foreign %
+GET /ksei/foreign-flow?limit=N              biggest MoM foreign delta
+```
+
+Examples:
+
+```bash
+curl https://bursarium.sarbeh.com/ksei/ownership/BBCA
+# → 72.73% asing, foreign mutual fund 19.36B shares
+
+curl https://bursarium.sarbeh.com/ksei/top-foreign-owned?limit=5
+# → SQBB 100%, BPII 99.97%, FASW 99.92%, CTBN 99.91%, ABDA 99.84%
+
+curl 'https://bursarium.sarbeh.com/ksei/foreign-flow?limit=10'
+# → Top 10 tickers with biggest foreign-shares change MoM
+```
+
+Backfill 4 years history:
+
+```bash
+# 1. discover available dates from KSEI archive
+./scripts/discover-ksei-dates.sh 2023-01 2026-03 > ksei-dates.txt
+
+# 2. parse zips locally + POST to /_test/ksei-bulk in 500-row chunks
+BURSARIUM_TOKEN=... node ./scripts/backfill-ksei-local.mjs $(cat ksei-dates.txt)
+```
+
+> **Why local parsing**: Workers Free has 10s CPU per request. Unzipping + parsing 3,400-row TXT exceeds that. Solution: parse locally (laptop CPU is unbounded), POST chunks to a worker endpoint that just runs D1 batch inserts. Worker stays well under CPU limit. ~7s per month, 35 months ≈ 4 minutes total backfill.
+
+> **D1 free-tier note**: write quota = 100K/day. Full 4-year backfill (~120K rows) needs to be split across 2 days, or upgrade to D1 paid ($5/mo, 50M writes/day).
 
 ## Sync schedule (live-aware)
 

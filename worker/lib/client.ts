@@ -82,6 +82,17 @@ export class IdxClient {
     }
     return (await response.json()) as T
   }
+
+  // KSEI raw binary fetch — no session/cookies needed (web.ksei.co.id is public,
+  // unlike www.idx.co.id which has Bot Management cookies). Bypass ensureSession.
+  async fetchPublicBytes(url: string, options: FetchOptions = {}): Promise<ArrayBuffer> {
+    const response = await this.fetchUrl(url, { ...options, cookie: '' })
+    if (!response.ok) {
+      const body = await response.text()
+      throw new Error(`fetchPublicBytes failed (${response.status}): ${body.slice(0, 200)}`)
+    }
+    return await response.arrayBuffer()
+  }
 }
 
 function wait(ms: number): Promise<void> {
