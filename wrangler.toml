@@ -14,8 +14,10 @@ workers_dev = false
 
 # Custom domain — auto-provisions DNS A record + cert.
 # Requires sarbeh.com to be in this Cloudflare account as a zone.
+# Primary API endpoint — generic api.sarbeh.com prefix.
+# (bursarium.sarbeh.com previously routed here, now points to frontend.)
 [[routes]]
-pattern = "bursarium.sarbeh.com"
+pattern = "api.sarbeh.com"
 custom_domain = true
 
 # Optional: usage limits + observability
