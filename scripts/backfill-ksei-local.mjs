@@ -79,17 +79,23 @@ function parseTxt(txt, date) {
   return rows
 }
 
-async function postChunk(rows) {
-  const res = await fetch(`${WORKER}/_test/ksei-bulk?token=${TOKEN}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(rows)
-  })
-  const body = await res.json().catch(() => ({}))
-  if (!res.ok || body.status !== 'ok') {
-    throw new Error(`bulk insert failed: ${res.status} ${JSON.stringify(body).slice(0, 200)}`)
+async function postChunk(rows, { retries = 4 } = {}) {
+  let lastErr = ''
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    const res = await fetch(`${WORKER}/_test/ksei-bulk?token=${TOKEN}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(rows)
+    })
+    const body = await res.json().catch(() => ({}))
+    if (res.ok && body.status === 'ok') return body
+    lastErr = `${res.status} ${JSON.stringify(body).slice(0, 200)}`
+    // 503 = D1 transient throttle. Backoff exponentially.
+    const delay = Math.min(60_000, 1000 * 2 ** attempt) + Math.random() * 500
+    process.stdout.write(`    retry ${attempt}/${retries} after ${Math.round(delay)}ms (last: ${lastErr.slice(0, 100)})\n`)
+    await new Promise((r) => setTimeout(r, delay))
   }
-  return body
+  throw new Error(`bulk insert failed after ${retries} retries: ${lastErr}`)
 }
 
 async function ingest(date) {
@@ -129,12 +135,26 @@ if (dates.length === 0) {
   process.exit(1)
 }
 
+// Throttle between dates to give D1 quota/rate-limit room. Default 5s.
+const SLEEP_BETWEEN_DATES_MS = Number(process.env.SLEEP_BETWEEN_DATES_MS ?? '5000')
+
 let total = 0
-for (const date of dates) {
+const failed = []
+for (let i = 0; i < dates.length; i++) {
+  const date = dates[i]
   try {
     total += await ingest(date)
   } catch (err) {
     console.error(`  FAIL: ${err.message}`)
+    failed.push(date)
+  }
+  if (i < dates.length - 1 && SLEEP_BETWEEN_DATES_MS > 0) {
+    await new Promise((r) => setTimeout(r, SLEEP_BETWEEN_DATES_MS))
   }
 }
 console.log(`\n=== done: ${total} rows across ${dates.length} dates ===`)
+if (failed.length > 0) {
+  console.log(`Failed dates (${failed.length}): ${failed.join(' ')}`)
+  // Exit non-zero so caller can detect partial success.
+  process.exit(2)
+}
