@@ -1,0 +1,31 @@
+# Dates that failed during initial backfill — likely D1 100K/day write quota
+# exhausted. Retry these after 24h or upgrade to D1 paid.
+# Run: BURSARIUM_TOKEN=... node scripts/backfill-ksei-local.mjs $(grep -v '^#' data/ksei-pending-backfill.txt)
+20230428
+20230531
+20230627
+20231031
+20231130
+20231229
+20240131
+20240229
+20240328
+20240430
+20240531
+20240628
+20240731
+20240830
+20240930
+20241031
+20241129
+20241230
+20250131
+20250228
+20250327
+20250430
+20250630
+20250731
+20250829
+20250930
+20251031
+20251128
